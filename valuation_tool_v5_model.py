@@ -1,6 +1,7 @@
 # Value a company based on its historical financial information as well as historical industry benchmarks
 import locale
 import time
+import datetime
 import pandas as pd
 import numpy as np
 import yahoo_fin.stock_info as si
@@ -8,7 +9,8 @@ from yahoo_fin.stock_info import _parse_json
 from dateutil.relativedelta import relativedelta
 from IPython.display import display
 import asyncio
-import yf_scraper_asyncio_v5_added_industry_data
+import yf_scraper_asyncio_vF
+import industry_data_compiler_vF
 
 #import nest_asyncio
 #nest_asyncio.apply()
@@ -28,9 +30,23 @@ pd.set_option('display.max_rows', 100)
 t0 = time.time()
 tp0 = time.process_time()
 
-ticker_list = ['FIVN'] # List of companies we want to value
-industry_data = None # Load industry data; if it's too old (maybe >1 month), rerun the industry data webscrape
-companies = asyncio.run(yf_scraper_asyncio_v5_added_industry_data.company_data(ticker_list))
+ticker_list   = ['FIVN'] # List of companies we want to value
+
+def load_market_avgs():
+    # Load sector and industry data; if it's too old (maybe >1 month), rerun the industry data webscrape
+    sector_avgs   = pd.read_csv('sector_avgs.csv', index_col=0, header=[0,1]) # header argument helps recognize multi-index column names
+    industry_avgs = pd.read_csv('industry_avgs.csv', index_col=0, header=[0,1])
+
+    # Calculate days since industry data was updated; if too old, rerun industry data webscrape
+    avgs_date = datetime.date.fromisoformat(sector_avgs.index.name)
+    today = datetime.date.today()
+    print(f'Sector and industry averages loaded as of {avgs_date} ({(today - avgs_date).days} days since last update)')
+
+    return sector_avgs, industry_avgs, avgs_date
+
+# This asyncio function returns a dictionary with nested dictionaries for each ticker:
+# {*ticker*: {*webpage or financial statement*: {key: value}}}
+companies = asyncio.run(yf_scraper_asyncio_vF.company_data(ticker_list))
 
 def ttm_income_statement(is_quarterly):
     # This function organizes necessary TTM (trailing twelve months) income statement items for equity valuation
@@ -86,9 +102,6 @@ def income_statement_trends(is_yearly):
                                            'researchDevelopment'])
     return trends_output
 
-
-
-
 class Company_Info:
     # Stores company specific data
     def __init__(self, ticker: str, rnd_adjustment = True):
@@ -119,7 +132,7 @@ class Company_Info:
         self.model_inputs['rnd_amortization_years'] = 3
 
         if self.rnd_adjustment == True:
-            rnd         = [self.income_statement.loc['researchDevelopment']]+ self.trend_summary.loc['researchDevelopment']].to_list()
+            rnd         = [self.income_statement.loc['researchDevelopment']]+ self.trend_summary.loc['researchDevelopment'].to_list()
             weights     = [1]
             years       = self.model_inputs['rnd_amortization_years']
             time_offset = (self.latest_quarter_end.month - self.latest_year_end.month)/12 # figure out how to do months
@@ -180,6 +193,7 @@ class Company_Info:
             else:
                 first_level_keys.append(k1)
         print('\nAll keys with no second level dictionary: {}'.format(' | '.join(first_level_keys)))
+
 
 def valuation_model(Company):
     # Valuation model
@@ -457,9 +471,10 @@ def valuation_info(ticker):
     
     dcf.Invested_Capital = col_invested_capital
 
-FIVN = Company_Info(ticker_1)
 
-print(FIVN.__dict__)
+#FIVN = Company_Info(ticker_1)
+
+#print(FIVN.__dict__)
 
 t1 = time.time()
 tp1 = time.process_time()

@@ -16,14 +16,6 @@ income_statement_url = 'https://finance.yahoo.com/quote/{}/financials'
 balance_sheet_url    = 'https://finance.yahoo.com/quote/{}/balance-sheet'
 quote_summary_url    = 'https://finance.yahoo.com/quote/{}'
 
-sp500 = si.tickers_sp500()
-
-ticker_list = ['A', 'AAL', 'AAP', 'AAPL', 'ABBV', 'ABC', 'ABMD', 'ABT', 'ACN', 'ADBE']
-#ticker_list = ['FIVN', 'ASAN']
-ticker_list = ['FIVN']
-ticker_list = ['VMEO']
-#ticker_list = sp500[:200]
-
 t0 = time.time()
 tp0 = time.process_time()
 
@@ -132,7 +124,7 @@ async def company_data(ticker_list):
     print(output)
     return output
 
-asyncio.run(company_data(ticker_list))
+#asyncio.run(company_data(ticker_list))
 
 t1 = time.time()
 tp1 = time.process_time()
