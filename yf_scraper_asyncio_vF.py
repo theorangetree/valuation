@@ -107,7 +107,7 @@ async def company_data(ticker_list):
         try:
             json_info = parse_json(html)
             # Alter this list to identify stock information of interest
-            json_info_keys = [('price','shortName'),('financialData','totalDebt'),('financialData','revenueGrowth'),    
+            json_info_keys = [('price','shortName'),('financialData','totalDebt'),('financialData','revenueGrowth'),
                               ('defaultKeyStatistics','beta'),('price','regularMarketPrice'),('price','currency'),('summaryProfile','industry'),
                               ('summaryProfile','sector'),('summaryProfile','country'),('summaryProfile','longBusinessSummary')]
             quote_summary_dict = {b: json_info[a][b] for a, b in json_info_keys}
@@ -120,8 +120,6 @@ async def company_data(ticker_list):
     json_info = parse_json(rf_rate[0])
     output['rf_rate'] = json_info['price']['regularMarketPreviousClose'] / 100
 
-
-    print(output)
     return output
 
 #asyncio.run(company_data(ticker_list))

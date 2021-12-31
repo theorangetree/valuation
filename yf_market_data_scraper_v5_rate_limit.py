@@ -82,7 +82,7 @@ def parse_json(html):
         json_info = json.loads(new_data)
         return json_info
 
-async def industry_data(ticker_list):
+async def market_data(ticker_list):
     # This function outputs a dictionary: key = stock ticker, value = dictionary containing:
         # relevant stock information
 
@@ -95,9 +95,9 @@ async def industry_data(ticker_list):
     # Alter this list to reflect stock information of interest
     print('start looping')
     json_info_keys = [('price','shortName'),('financialData','totalDebt'),('financialData','totalRevenue'),('financialData','revenueGrowth'),
-                      ('financialData','operatingMargins'),('defaultKeyStatistics','beta'),('price','regularMarketPrice'),('price','currency'),
-                      ('summaryProfile','industry'),('summaryProfile','sector'),('summaryProfile','country'),
-                      ('summaryProfile','longBusinessSummary')]
+                      ('financialData','operatingMargins'),('defaultKeyStatistics','beta'),
+                      ('price','regularMarketPrice'),('price','currency'),('summaryProfile','industry'),('summaryProfile','sector'),
+                      ('summaryProfile','country'),('summaryProfile','longBusinessSummary')]
     for url, html in html_list_qs:
         try:
             json_info = parse_json(html)
@@ -117,11 +117,11 @@ async def industry_data(ticker_list):
     output_df = pd.concat({k: pd.DataFrame().from_dict(v, orient='index') for k, v in output.items()}, axis=0)
     # Set index header as today's date
     output_df.rename_axis([f'{datetime.date.today()}','webpage'], inplace=True)
-    output_df.to_csv('industry_data.csv')
-    print(f'Wrote data to \'industry_data.csv\' for {output_df.index.size} tickers (some may have blank data)')
+    output_df.to_csv('market_data.csv')
+    print(f'Wrote data to \'market_data.csv\' for {output_df.index.size} tickers (some may have blank data)')
     return output_df
 
-asyncio.run(industry_data(tickers))
+asyncio.run(market_data(tickers))
 
 t1 = time.time()
 tp1 = time.process_time()

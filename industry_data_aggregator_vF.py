@@ -1,15 +1,15 @@
 # Main function:
-# industry_averages(csv_path: str, ticker='----', write=False)
+# industry_aggregates(csv_path: str, ticker='----', write=False)
 
 # Purpose:
-# Average industry data by sector and industry from line-by-line stock data csv file, excluding specified ticker
-# [Optional] If write=True, outputs averages as csv file
+# Aggregate stock data by sector and industry from line-by-line stock data .csv file, excluding specified ticker
+# [Optional] If write=True, outputs aggregates as csv file
 
 import pandas as pd
 
-def filter_companies(df, ticker='----'):
-    # [Optional ticker argument] Remove the valuation company so that it is excluded from the averages
-    df = df[df.index != ticker]
+def filter_companies(df, ex_ticker):
+    # [Optional ex_ticker argument] Exclude the valuation company ticker so that it is excluded from the averages
+    df = df[df.index != ex_ticker]
 
     # Filter for U.S. companies
     df = df[df.country == 'United States']
@@ -32,7 +32,7 @@ def clean_industry_data(df):
                                  r'^Insurance.*'            :'Insurance',
                                  r'^Real Estate.*'          :'Real Estate Services',
                                  r'^REIT.*'                 :'REIT',
-                                 r'^Utilities.*'            :'Utilities'
+                                 r'^Utilities.*'            :'Utilities',
                                  r'^Oil & Gas (?!Equipment & Services).*$':'Oil & Gas',
                                  }},
                     regex=True)
@@ -60,24 +60,24 @@ def clean_industry_data(df):
                                  }})
     return df
 
-def industry_averages(csv_path, ticker='----', write=False):
+def industry_aggregates(csv_path, ex_ticker='----', write=False):
     df = pd.read_csv(csv_path, index_col=0)
-    avgs_date = df.index.name
+    aggs_date = df.index.name
 
-    df = filter_companies(df)
+    df = filter_companies(df, ex_ticker=ex_ticker)
     df = clean_industry_data(df)
 
-    df_avg_industry = df.groupby('industry').agg(['count', 'mean', 'median'])
-    df_avg_sector   = df.groupby('sector').agg(['count', 'mean', 'median'])
+    df_agg_industry = df.groupby('industry').agg(['count', 'mean', 'median'])
+    df_agg_sector   = df.groupby('sector').agg(['count', 'mean', 'median'])
 
-    df_avg_industry.index.name = avgs_date
-    df_avg_sector.index.name   = avgs_date
+    df_agg_industry.index.name = aggs_date
+    df_agg_sector.index.name   = aggs_date
 
-    # Output sector and industry averages as csv files
+    # Output sector and industry aggregates as csv files
     if write == True:
-        df_avg_industry.to_csv('industry_avgs.csv')
-        df_avg_sector.to_csv('sector_avgs.csv')
+        df_agg_industry.to_csv('industry_aggs.csv')
+        df_agg_sector.to_csv('sector_aggs.csv')
 
-    return df_avg_sector, df_avg_industry, avgs_date
+    return df_agg_sector, df_agg_industry, aggs_date
 
-#industry_averages('industry_data.csv', write=True)
+#industry_aggregates('industry_data.csv', write=True)

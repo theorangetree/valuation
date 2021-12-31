@@ -9,8 +9,8 @@ from yahoo_fin.stock_info import _parse_json
 from dateutil.relativedelta import relativedelta
 from IPython.display import display
 import asyncio
-import yf_scraper_asyncio_vF
-import industry_data_compiler_vF
+import yf_scraper_asyncio_vF as scraper
+import industry_data_aggregator_vF as aggregator
 
 #import nest_asyncio
 #nest_asyncio.apply()
@@ -30,26 +30,31 @@ pd.set_option('display.max_rows', 100)
 t0 = time.time()
 tp0 = time.process_time()
 
-ticker_list   = ['FIVN'] # List of companies we want to value
+ticker_list = ['FIVN'] # List of companies we want to value
 
-def load_market_avgs():
-    # Load sector and industry data; if it's too old (maybe >1 month), rerun the industry data webscrape
-    sector_avgs   = pd.read_csv('sector_avgs.csv', index_col=0, header=[0,1]) # header argument helps recognize multi-index column names
-    industry_avgs = pd.read_csv('industry_avgs.csv', index_col=0, header=[0,1])
+def get_market_aggs(read=False, ex_ticker="----"):
+    if read == True:
+        # Read sector and industry averages from .csv files
+        sector_aggs   = pd.read_csv('sector_aggs.csv', index_col=0, header=[0,1]) # header argument helps recognize multi-index column names
+        industry_aggs = pd.read_csv('industry_aggs.csv', index_col=0, header=[0,1])
+        aggs_date = datetime.date.fromisoformat(sector_aggs.index.name)
+    else:
+        # Aggregate sector and industry averages from line-by-line stock data .csv file
+        sector_aggs, industry_aggs, aggs_date = aggregator.industry_aggregates('market_data.csv', ex_ticker=ex_ticker)
+        aggs_date = datetime.date.fromisoformat(aggs_date)
 
-    # Calculate days since industry data was updated; if too old, rerun industry data webscrape
-    avgs_date = datetime.date.fromisoformat(sector_avgs.index.name)
+    # Calculate days since market data was updated; if too old (e.g. >3 months), recommend rerunning market data webscrape
     today = datetime.date.today()
-    print(f'Sector and industry averages loaded as of {avgs_date} ({(today - avgs_date).days} days since last update)')
+    print(f'Sector and industry averages loaded as of {aggs_date} ({(today - aggs_date).days} days since last update)')
 
-    return sector_avgs, industry_avgs, avgs_date
+    return sector_aggs, industry_aggs, aggs_date
 
 # This asyncio function returns a dictionary with nested dictionaries for each ticker:
 # {*ticker*: {*webpage or financial statement*: {key: value}}}
-companies = asyncio.run(yf_scraper_asyncio_vF.company_data(ticker_list))
+companies = asyncio.run(scraper.company_data(ticker_list))
 
 def ttm_income_statement(is_quarterly):
-    # This function organizes necessary TTM (trailing twelve months) income statement items for equity valuation
+    # This function organizes necessary TTM (trailing twelve month) income statement items for equity valuation
     
     ttm_output = is_quarterly                 # Quarterly income statements (four latest quarters)
     ttm_date   = ttm_output.columns[0]        # TTM end date
@@ -118,15 +123,58 @@ class Company_Info:
         self.rnd_adjustment     = rnd_adjustment
         self.model_inputs       = {}
 
+        # Replace low sample-size sectors/industries with similar ones
+        df = pd.DataFrame({'sector'  :[self.sector],
+                           'industry':[self.industry]})
+        df = aggregator.clean_industry_data(df)
+        self.sector   = df.loc[0,'sector']
+        self.industry = df.loc[0,'industry']
+
+        # Calculate market aggregate statistics while excluding self-data
+        self.sector_aggs, self.industry_aggs, aggs_date = get_market_aggs(ex_ticker=self.ticker)
+    
     ### Calculate DCF assumptions for growth, margins, sales-to-capital ratio, and cost of capital
     
-    def growth(self):
-        self.model_inputs['growth_rate'] = np.mean(self.quote_summary['revenueGrowth'],
-                                                   self.trend_summary.loc['revenue3YGrowth'],
-                                                   industry_data.loc[self.industry,'revenueGrowth'],
-                                                   industry_data.loc[self.sector,'revenueGrowth'])
+    def growth(self, manual=False, duration=5): # duration: int >= 1
+        
+        if manual != False: # Manual input growth
+            self.model_inputs['growth_rate'] = manual
+        
+        else: # Auto estimate growth
+            self_TTM = self.quote_summary['revenueGrowth']
+            self_3yr = self.trend_summary.loc['revenue3YCAGR',self.latest_year_end]
+            sect_TTM = self.sector_aggs.loc[self.sector,('revenueGrowth','median')]     # Use median instead of mean to exclude outliers
+            indu_TTM = self.industry_aggs.loc[self.industry,('revenueGrowth','median')]
+            
+            if pd.isnull(self_3yr):
+                growth_rates = [self_TTM, sect_TTM, indu_TTM]
+                weights      = [0.65, 0.2, 0.15]
+            else:
+                growth_rates = [self_TTM, self_3yr, sect_TTM, indu_TTM]
+                weights      = [0.45, 0.2, 0.2, 0.15]
+            print(f'Growth rates: {growth_rates}')
+            self.model_inputs['growth_rate'] = np.average(growth_rates, weights=weights)
+
+        self.model_inputs['growth_duration'] = duration
+
+    def margin(self):
+        self.model_inputs['target_margin'] = np.mean(industry_data.loc[self.industry,'operatingMargins'],
+                                                     industry_data.loc[self.sector,'operatingMargins'])
     
-        self.model_inputs['growth_duration'] = 5
+    def sales_to_capital(self):
+        # Calculate sales to capital ratio
+        invested_capital = self.balance_sheet['totalStockholderEquity'] + \
+                           self.quote_summary['totalDebt'] - \
+                           self.balance_sheet['cash']
+        
+        self.model_inputs['sales_to_capital'] = self.income_statement['totalRevenue'] / invested_capital
+    
+    def beta(self):
+        None
+
+    def cost_of_capital(self):
+        market_cost_of_capital = companies['rf_rate'] # + market ERP
+        self.model_inputs['cost_of_capital'] = np.mean(industry_data.loc[self.industry,'cost_of_capital'])
 
     def research_development(self):
         self.model_inputs['rnd_amortization_years'] = 3
@@ -148,24 +196,7 @@ class Company_Info:
                     weights.append(1)
 
             new_rnd_expense  = rnd * weights * 1/years
-            rnd_differential = 
-    
-    def margin(self):
-        self.model_inputs['target_margin'] = np.mean(industry_data.loc[self.industry,'operatingMargins'],
-                                                     industry_data.loc[self.sector,'operatingMargins'])
-    
-    def sales_to_capital(self):
-        # Calculate sales to capital ratio
-        invested_capital = self.balance_sheet['totalStockholderEquity'] + \
-                           self.quote_summary['totalDebt'] - \
-                           self.balance_sheet['cash']
-        
-        self.model_inputs['sales_to_capital'] = self.income_statement['totalRevenue'] / invested_capital
-    
-    def cost_of_capital(self):
-        market_cost_of_capital = companies['rf_rate'] # + market ERP
-        self.model_inputs['cost_of_capital'] = np.mean(industry_data.loc[self.industry,'cost_of_capital',
-                                                                          self.industry,
+            rnd_differential = None
     
     ### Prepare data for model
     def company_dcf_data(self):
@@ -193,6 +224,12 @@ class Company_Info:
             else:
                 first_level_keys.append(k1)
         print('\nAll keys with no second level dictionary: {}'.format(' | '.join(first_level_keys)))
+
+FIVN = Company_Info(ticker_list[0])
+import pprint as pp
+pp.pprint   (FIVN.__dict__)
+FIVN.growth()
+print(FIVN.model_inputs)
 
 
 def valuation_model(Company):
@@ -413,16 +450,16 @@ def valuation_model(Company):
     print(f'\nPrice to value ratio: {price_to_value.round(3)}')
     
     return
+
 """
 class DCF_Model:
     # Create DCF models
     def __init__(self, company):
         self.company = company
         None
-        
-
-
 """
+
+
 
 
 def latest_period_end_date(ticker):
@@ -472,9 +509,7 @@ def valuation_info(ticker):
     dcf.Invested_Capital = col_invested_capital
 
 
-#FIVN = Company_Info(ticker_1)
 
-#print(FIVN.__dict__)
 
 t1 = time.time()
 tp1 = time.process_time()
