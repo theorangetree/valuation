@@ -136,7 +136,6 @@ class Company_Info:
     ### Calculate DCF assumptions for growth, margins, sales-to-capital ratio, and cost of capital
     
     def growth(self, manual=False, duration=5): # duration: int >= 1
-        
         if manual != False: # Manual input growth
             self.model_inputs['growth_rate'] = manual
         
@@ -157,8 +156,13 @@ class Company_Info:
 
         self.model_inputs['growth_duration'] = duration
 
-    def margin(self):
-        self.model_inputs['target_margin'] = np.mean(industry_data.loc[self.industry,'operatingMargins'],
+    def target_margin(self, manual=False):
+        if manual != False: # Manual input target operating margin
+            self.model_input['target_margin'] = manual
+
+        else:
+            self_TTM = self.income_statement['']
+            self.model_inputs['target_margin'] = np.mean(industry_data.loc[self.industry,'operatingMargins'],
                                                      industry_data.loc[self.sector,'operatingMargins'])
     
     def sales_to_capital(self):
