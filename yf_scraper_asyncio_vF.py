@@ -7,6 +7,8 @@ import time
 import numpy as np
 import yahoo_fin.stock_info as si
 import math
+from bs4 import BeautifulSoup
+import dateutil.parser
 
 # Set display options to show more rows and columns than default
 pd.set_option('display.max_columns', 50)
@@ -15,6 +17,7 @@ pd.set_option('display.max_rows', 200)
 income_statement_url = 'https://finance.yahoo.com/quote/{}/financials'
 balance_sheet_url    = 'https://finance.yahoo.com/quote/{}/balance-sheet'
 quote_summary_url    = 'https://finance.yahoo.com/quote/{}'
+damodaran_url        = 'http://people.stern.nyu.edu/adamodar/New_Home_Page/home.htm'
 
 t0 = time.time()
 tp0 = time.process_time()
@@ -27,7 +30,7 @@ async def get_html(session, url):
 
 async def scrape_tickers(session, url, ticker_list):
     # Asyncronously send web requests and return data
-    print('begun')
+    print('begun scraping')
     tasks = [get_html(session, url.format(ticker)) for ticker in ticker_list]
     html_list = await asyncio.gather(*tasks)
     print('received')
@@ -40,6 +43,29 @@ async def risk_free_rate(session, url):
     rf_rate = await asyncio.gather(task)
     print('received rf_rate')
     return rf_rate
+
+async def implied_ERP(session, url):
+    # Asyncronously scrape implied equity risk premium from Prof. Damodaran's website
+    print('begun implied_ERP')
+    try:
+        task = get_html(session, url)
+        home_page = await asyncio.gather(task)
+        soup = BeautifulSoup(home_page[0], 'html.parser')
+
+        # Parse html for implied equity risk premium and the date of the result
+        start = soup.find(string=re.compile('Implied ERP on'))
+        date  = dateutil.parser.parse(start, fuzzy=True).date()
+        regex = re.compile(r'\d\.\d{2}') # identify x.xx float
+        line  = start.find_next(string=regex)
+
+        # Convert implied ERP from percentage to float
+        implied_ERP = float(re.match(regex, line).group()) / 100
+        print(f'received implied_ERP from Prof. Damodaran\'s website of {implied_ERP:.4f} on {date}')
+    except:
+        print('error retrieving implied_ERP from Prof. Damodara\'s website')
+        implied_ERP = 0.05 # assumption of 5% ERP
+
+    return implied_ERP
 
 def parse_json(html):
     # Convert html into json
@@ -85,8 +111,9 @@ async def company_data(ticker_list):
         tasks_main = [scrape_tickers(session, income_statement_url, ticker_list),
                       scrape_tickers(session, balance_sheet_url, ticker_list),
                       scrape_tickers(session, quote_summary_url, ticker_list),
-                      risk_free_rate(session, quote_summary_url)]
-        html_list_is, html_list_bs, html_list_qs, rf_rate = await asyncio.gather(*tasks_main)
+                      risk_free_rate(session, quote_summary_url),
+                      implied_ERP(session, damodaran_url)]
+        html_list_is, html_list_bs, html_list_qs, rf_rate, ERP = await asyncio.gather(*tasks_main)
 
     output = {}
     
@@ -120,6 +147,9 @@ async def company_data(ticker_list):
     json_info = parse_json(rf_rate[0])
     output['rf_rate'] = json_info['price']['regularMarketPreviousClose'] / 100
 
+    # Implied equity risk premium
+    output['implied_ERP'] = ERP
+    
     return output
 
 #asyncio.run(company_data(ticker_list))

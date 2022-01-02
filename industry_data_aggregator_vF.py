@@ -60,6 +60,13 @@ def clean_industry_data(df):
                                  }})
     return df
 
+def percentile(n):
+    # Create percentile function usable with Pandas groupby agg
+    def percentile_(x):
+        return x.quantile(n)
+    percentile_.__name__ = 'percentile_{:2.0f}'.format(n*100)
+    return percentile_
+
 def industry_aggregates(csv_path, ex_ticker='----', write=False):
     df = pd.read_csv(csv_path, index_col=0)
     aggs_date = df.index.name
@@ -67,8 +74,8 @@ def industry_aggregates(csv_path, ex_ticker='----', write=False):
     df = filter_companies(df, ex_ticker=ex_ticker)
     df = clean_industry_data(df)
 
-    df_agg_industry = df.groupby('industry').agg(['count', 'mean', 'median'])
-    df_agg_sector   = df.groupby('sector').agg(['count', 'mean', 'median'])
+    df_agg_industry = df.groupby('industry').agg(['count', 'mean', percentile(0.25), 'median', percentile(0.75)])
+    df_agg_sector   = df.groupby('sector').  agg(['count', 'mean', percentile(0.25), 'median', percentile(0.75)])
 
     df_agg_industry.index.name = aggs_date
     df_agg_sector.index.name   = aggs_date
@@ -77,7 +84,9 @@ def industry_aggregates(csv_path, ex_ticker='----', write=False):
     if write == True:
         df_agg_industry.to_csv('industry_aggs.csv')
         df_agg_sector.to_csv('sector_aggs.csv')
-
+    
     return df_agg_sector, df_agg_industry, aggs_date
 
-#industry_aggregates('industry_data.csv', write=True)
+# Uncomment to update local aggs files
+#industry_aggregates('market_data.csv', write=True)
+#industry_aggregates('market_data_synchronous.csv', write=True)

@@ -40,7 +40,7 @@ def get_market_aggs(read=False, ex_ticker="----"):
         aggs_date = datetime.date.fromisoformat(sector_aggs.index.name)
     else:
         # Aggregate sector and industry averages from line-by-line stock data .csv file
-        sector_aggs, industry_aggs, aggs_date = aggregator.industry_aggregates('market_data.csv', ex_ticker=ex_ticker)
+        sector_aggs, industry_aggs, aggs_date = aggregator.industry_aggregates('market_data_synchronous.csv', ex_ticker=ex_ticker)
         aggs_date = datetime.date.fromisoformat(aggs_date)
 
     # Calculate days since market data was updated; if too old (e.g. >3 months), recommend rerunning market data webscrape
@@ -135,11 +135,13 @@ class Company_Info:
     
     ### Calculate DCF assumptions for growth, margins, sales-to-capital ratio, and cost of capital
     
-    def growth(self, manual=False, duration=5): # duration: int >= 1
-        if manual != False: # Manual input growth
+    def growth(self, manual=False, years=5): # years: int >= 1
+        # High-growth rate
+        if manual != False: # Manual input
             self.model_inputs['growth_rate'] = manual
         
-        else: # Auto estimate growth
+        else: # Market-based estimate
+            print('Auto-calculating growth_rate...')
             self_TTM = self.quote_summary['revenueGrowth']
             self_3yr = self.trend_summary.loc['revenue3YCAGR',self.latest_year_end]
             sect_TTM = self.sector_aggs.loc[self.sector,('revenueGrowth','median')]     # Use median instead of mean to exclude outliers
@@ -151,19 +153,70 @@ class Company_Info:
             else:
                 growth_rates = [self_TTM, self_3yr, sect_TTM, indu_TTM]
                 weights      = [0.45, 0.2, 0.2, 0.15]
+
             print(f'Growth rates: {growth_rates}')
             self.model_inputs['growth_rate'] = np.average(growth_rates, weights=weights)
 
-        self.model_inputs['growth_duration'] = duration
+        # Years of high-growth
+        self.model_inputs['growth_duration'] = years
 
-    def target_margin(self, manual=False):
-        if manual != False: # Manual input target operating margin
-            self.model_input['target_margin'] = manual
 
-        else:
-            self_TTM = self.income_statement['']
-            self.model_inputs['target_margin'] = np.mean(industry_data.loc[self.industry,'operatingMargins'],
-                                                     industry_data.loc[self.sector,'operatingMargins'])
+    def target_margin(self, manual=False, years=False): # years: int >= 1
+        # Target operating income margin
+        if manual != False: # Manual input
+            self.model_inputs['target_margin'] = manual
+
+        else: # Market-based estimate
+            print('Auto-calculating target_margin...')
+            self_TTM = self.income_statement.loc['operatingMargin']
+            self_4yr = self.trend_summary.loc['operatingMargin',:].mean() # Yahoo Finance returns up to 4 years of data
+            sect_TTM = self.sector_aggs  .loc[self.sector,  ('operatingMargins',['percentile_25','median','percentile_75'])].xs('operatingMargins')
+            indu_TTM = self.industry_aggs.loc[self.industry,('operatingMargins',['percentile_25','median','percentile_75'])].xs('operatingMargins')
+            
+            operating_margins = [self_TTM, self_4yr, sect_TTM.loc['percentile_75'], indu_TTM.loc['percentile_75']] # Use 75th percentile since target margin is supposed to be higher than median company
+            weights = [0.125, 0.125, 0.375, 0.375]
+
+            print(f'Operating margins: {operating_margins}')
+            self.model_inputs['target_margin'] =  np.average(operating_margins, weights=weights)
+
+        # Years to achieve target operating margin
+        if type(years) is int:
+            self.model_inputs['years_to_target_margin'] = years
+
+        else:        
+            # Adjust years to reach target margin based on current margin positioning vs. market percentiles
+                # Above 50th %ile     : growth years + 0 years
+                # Closer to 50th %ile : growth years + 1 year
+                # Closer to 25th %ile : growth years + 2 years
+                # Below 25th %ile     : growth years + 3 years
+
+            print('Auto-calculating years to achieve target_margin based on number of growth years and market margins...')            
+            self_margin    = np.average([self_TTM, self_4yr])
+            market_margins = pd.concat([sect_TTM, indu_TTM], axis='columns').mean(axis='columns')
+            midpoint_25_50 = market_margins.loc[['percentile_25','median']].mean(axis='index')
+
+            cutoff_0, cutoff_1, cutoff_2 = market_margins.loc['median'], midpoint_25_50, market_margins.loc['percentile_25']
+            
+            try:
+                growth_duration = self.model_inputs['growth_duration']
+            except:
+                print('Assuming growth_duration and baseline target_margin achievement of 5 years')
+                growth_duration = 5
+
+            years = growth_duration
+            
+            if   self_margin >= cutoff_0:
+                None
+            elif self_margin >= cutoff_1:
+                years += 1
+            elif self_margin >= cutoff_2:
+                years += 2
+            elif self_margin <  cutoff_2:
+                years += 3
+            else:
+                print('Error occurred while calculating target margin achievement year')
+
+            self.model_inputs['years_to_target_margin'] = years
     
     def sales_to_capital(self):
         # Calculate sales to capital ratio
@@ -173,10 +226,15 @@ class Company_Info:
         
         self.model_inputs['sales_to_capital'] = self.income_statement['totalRevenue'] / invested_capital
     
-    def beta(self):
-        None
+    def tax_rate(self, tax=0.24):
+        # Define tax rate
+        # Jan-2022 corporate tax rate is 21%, but there is a proposal in congress to increase this to 26.5%
+        # As a result, I am assuming a roughly in-between tax rate of 24%
+        self.model_inputs['tax_rate'] = tax
 
     def cost_of_capital(self):
+        # Calculate levered Beta:
+        
         market_cost_of_capital = companies['rf_rate'] # + market ERP
         self.model_inputs['cost_of_capital'] = np.mean(industry_data.loc[self.industry,'cost_of_capital'])
 
@@ -231,8 +289,11 @@ class Company_Info:
 
 FIVN = Company_Info(ticker_list[0])
 import pprint as pp
-pp.pprint   (FIVN.__dict__)
+#pp.pprint   (FIVN.__dict__)
 FIVN.growth()
+FIVN.target_margin()
+FIVN.tax_rate()
+
 print(FIVN.model_inputs)
 
 
