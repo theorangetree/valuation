@@ -6,6 +6,7 @@ import json
 import re
 import time
 import datetime
+import random
 from russell3000_tickers_vF import Russell3000_Tickers # Class with methods .download() and .to_csv() or .to_list()
 
 r3000 = Russell3000_Tickers()
@@ -55,13 +56,14 @@ async def scrape_tickers(session, url, ticker_list):
     # Asyncronously send web requests and return data
     html_list = []
     count = 0
-    print(f'begun scraping - asynchronous')
+    print(f'begun scraping - synchronous')
     for ticker in ticker_list:
         html = await get_html(session, url.format(ticker))
         html_list.append(html)
         count += 1
         if count % 50 == 0:
             print(f'{count} requests processed')
+        await asyncio.sleep(random.randint(1,3))
     print('received')
     return html_list
 
@@ -96,10 +98,10 @@ async def market_data(ticker_list):
 
     # Alter this list to reflect stock information of interest
     print('start looping')
-    json_info_keys = [('price','shortName'),('financialData','totalDebt'),('financialData','totalRevenue'),('financialData','revenueGrowth'),
-                      ('financialData','operatingMargins'),('defaultKeyStatistics','beta'),
-                      ('price','regularMarketPrice'),('price','currency'),('summaryProfile','industry'),('summaryProfile','sector'),
-                      ('summaryProfile','country'),('summaryProfile','longBusinessSummary')]
+    json_info_keys = [('price','shortName'),('financialData','totalDebt'),('financialData','totalRevenue'),('financialData','totalCash'),
+                      ('financialData','debtToEquity'),('financialData','revenueGrowth'),('financialData','operatingMargins'),('defaultKeyStatistics','beta'),
+                      ('price','currency'),('price','regularMarketPrice'),('defaultKeyStatistics','sharesOutstanding'),('price','marketCap'),
+                      ('summaryProfile','industry'),('summaryProfile','sector'),('summaryProfile','country'),('summaryProfile','longBusinessSummary')]
     for url, html in html_list_qs:
         try:
             json_info = parse_json(html)

@@ -17,7 +17,7 @@ tickers = r3000.to_list()
 # import yahoo_fin.stock_info as si
 # tickers = si.tickers_sp500()
 # No data for these 23 tickers when running the full r3000; however they have data when running their own shorter list
-#tickers = ['ADGI','AVDX','CIVI','CRBU','CRGY','ERAS','ETD','GXO','HRT','IAS','ICVX','INFA','LAW','LYLT','MCW','MLKN','OLPX','PYCR','RIVN','ROCC','VMEO','VRE','XMTR']
+tickers = ['ADGI','AVDX','CIVI','CRBU','CRGY','ERAS','ETD','GXO','HRT','IAS','ICVX','INFA','LAW','LYLT','MCW','MLKN','OLPX','PYCR','RIVN','ROCC','VMEO','VRE','XMTR']
 # Exceptions for these 11 tickers when running the full r3000; no data/url available on Yahoo Finance
 #tickers = ['BFA','BFB','BRKB','CWENA','GEFB','HEIA','JWA','LENB','LGFA','LGFB','MOGA']
 
@@ -94,10 +94,10 @@ async def market_data(ticker_list):
 
     # Alter this list to reflect stock information of interest
     print('start looping')
-    json_info_keys = [('price','shortName'),('financialData','totalDebt'),('financialData','totalRevenue'),('financialData','revenueGrowth'),
-                      ('financialData','operatingMargins'),('defaultKeyStatistics','beta'),
-                      ('price','regularMarketPrice'),('price','currency'),('summaryProfile','industry'),('summaryProfile','sector'),
-                      ('summaryProfile','country'),('summaryProfile','longBusinessSummary')]
+    json_info_keys = [('price','shortName'),('financialData','totalDebt'),('financialData','totalRevenue'),('financialData','totalCash'),
+                      ('financialData','debtToEquity'),('financialData','revenueGrowth'),('financialData','operatingMargins'),('defaultKeyStatistics','beta'),
+                      ('price','currency'),('price','regularMarketPrice'),('defaultKeyStatistics','sharesOutstanding'),('price','marketCap'),
+                      ('summaryProfile','industry'),('summaryProfile','sector'),('summaryProfile','country'),('summaryProfile','longBusinessSummary')]
     for url, html in html_list_qs:
         try:
             json_info = parse_json(html)

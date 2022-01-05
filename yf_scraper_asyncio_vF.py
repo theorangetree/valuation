@@ -44,9 +44,9 @@ async def risk_free_rate(session, url):
     print('received rf_rate')
     return rf_rate
 
-async def implied_ERP(session, url):
+async def implied_erp(session, url):
     # Asyncronously scrape implied equity risk premium from Prof. Damodaran's website
-    print('begun implied_ERP')
+    print('begun implied_erp')
     try:
         task = get_html(session, url)
         home_page = await asyncio.gather(task)
@@ -59,13 +59,13 @@ async def implied_ERP(session, url):
         line  = start.find_next(string=regex)
 
         # Convert implied ERP from percentage to float
-        implied_ERP = float(re.match(regex, line).group()) / 100
-        print(f'received implied_ERP from Prof. Damodaran\'s website of {implied_ERP:.4f} on {date}')
+        implied_erp = float(re.match(regex, line).group()) / 100
+        print(f'received implied_erp from Prof. Damodaran\'s website of {implied_erp:.4f} on {date}')
     except:
-        print('error retrieving implied_ERP from Prof. Damodara\'s website')
-        implied_ERP = 0.05 # assumption of 5% ERP
+        print('error retrieving implied_erp from Prof. Damodara\'s website')
+        implied_erp = 0.05 # base assumption of 5% ERP
 
-    return implied_ERP
+    return implied_erp
 
 def parse_json(html):
     # Convert html into json
@@ -112,8 +112,8 @@ async def company_data(ticker_list):
                       scrape_tickers(session, balance_sheet_url, ticker_list),
                       scrape_tickers(session, quote_summary_url, ticker_list),
                       risk_free_rate(session, quote_summary_url),
-                      implied_ERP(session, damodaran_url)]
-        html_list_is, html_list_bs, html_list_qs, rf_rate, ERP = await asyncio.gather(*tasks_main)
+                      implied_erp(session, damodaran_url)]
+        html_list_is, html_list_bs, html_list_qs, rf_rate, erp = await asyncio.gather(*tasks_main)
 
     output = {}
     
@@ -134,8 +134,9 @@ async def company_data(ticker_list):
         try:
             json_info = parse_json(html)
             # Alter this list to identify stock information of interest
-            json_info_keys = [('price','shortName'),('financialData','totalDebt'),('financialData','revenueGrowth'),
-                              ('defaultKeyStatistics','beta'),('price','regularMarketPrice'),('price','currency'),('summaryProfile','industry'),
+            json_info_keys = [('price','shortName'),('financialData','totalDebt'),('financialData','totalCash'),('financialData','revenueGrowth'),
+                              ('defaultKeyStatistics','beta'),('price','currency'),('price','regularMarketPrice'),
+                              ('defaultKeyStatistics','sharesOutstanding'),('price','marketCap'),('summaryProfile','industry'),
                               ('summaryProfile','sector'),('summaryProfile','country'),('summaryProfile','longBusinessSummary')]
             quote_summary_dict = {b: json_info[a][b] for a, b in json_info_keys}
             output[json_info['symbol']]['quote_summary'] = quote_summary_dict
@@ -148,11 +149,12 @@ async def company_data(ticker_list):
     output['rf_rate'] = json_info['price']['regularMarketPreviousClose'] / 100
 
     # Implied equity risk premium
-    output['implied_ERP'] = ERP
-    
+    output['implied_erp'] = erp
+
     return output
 
-#asyncio.run(company_data(ticker_list))
+# Uncomment to test
+#print(asyncio.run(company_data(['CZR'])))
 
 t1 = time.time()
 tp1 = time.process_time()

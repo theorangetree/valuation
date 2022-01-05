@@ -9,7 +9,8 @@ from yahoo_fin.stock_info import _parse_json
 from dateutil.relativedelta import relativedelta
 from IPython.display import display
 import asyncio
-import yf_scraper_asyncio_vF as scraper
+import yf_scraper_asyncio_vF       as scraper
+import unlevered_betas_vF          as betas
 import industry_data_aggregator_vF as aggregator
 
 #import nest_asyncio
@@ -32,22 +33,7 @@ tp0 = time.process_time()
 
 ticker_list = ['FIVN'] # List of companies we want to value
 
-def get_market_aggs(read=False, ex_ticker="----"):
-    if read == True:
-        # Read sector and industry averages from .csv files
-        sector_aggs   = pd.read_csv('sector_aggs.csv', index_col=0, header=[0,1]) # header argument helps recognize multi-index column names
-        industry_aggs = pd.read_csv('industry_aggs.csv', index_col=0, header=[0,1])
-        aggs_date = datetime.date.fromisoformat(sector_aggs.index.name)
-    else:
-        # Aggregate sector and industry averages from line-by-line stock data .csv file
-        sector_aggs, industry_aggs, aggs_date = aggregator.industry_aggregates('market_data_synchronous.csv', ex_ticker=ex_ticker)
-        aggs_date = datetime.date.fromisoformat(aggs_date)
 
-    # Calculate days since market data was updated; if too old (e.g. >3 months), recommend rerunning market data webscrape
-    today = datetime.date.today()
-    print(f'Sector and industry averages loaded as of {aggs_date} ({(today - aggs_date).days} days since last update)')
-
-    return sector_aggs, industry_aggs, aggs_date
 
 # This asyncio function returns a dictionary with nested dictionaries for each ticker:
 # {*ticker*: {*webpage or financial statement*: {key: value}}}
@@ -80,9 +66,7 @@ def latest_balance_sheet(bs_quarterly):
     bs_output = bs_output.iloc[:,0] # Keep only the latest quarter
     
     # Select and order relevant data fields to output
-    bs_output = bs_output.reindex(['totalStockholderEquity',
-                                   'cash',
-                                   'commonStock'])
+    bs_output = bs_output.reindex(['totalStockholderEquity'])
     return bs_output
 
 def income_statement_trends(is_yearly):
@@ -109,8 +93,9 @@ def income_statement_trends(is_yearly):
 
 class Company_Info:
     # Stores company specific data
-    def __init__(self, ticker: str, rnd_adjustment = True):
+    def __init__(self, ticker: str, market_data_path='market_data_synchronous.csv'):
         self.ticker             = ticker
+        self.market_data_path   = market_data_path
         self.income_statement   = ttm_income_statement(companies[ticker]['is_quarterly'])
         self.balance_sheet      = latest_balance_sheet(companies[ticker]['bs_quarterly'])
         self.trend_summary      = income_statement_trends(companies[ticker]['is_yearly'])
@@ -120,8 +105,10 @@ class Company_Info:
         self.industry           = self.quote_summary['industry']
         self.latest_quarter_end = self.income_statement.name
         self.latest_year_end    = self.trend_summary.columns[0]
-        self.rnd_adjustment     = rnd_adjustment
         self.model_inputs       = {}
+
+        # Add risk-free rate
+        self.model_inputs['rf_rate'] = companies['rf_rate']
 
         # Replace low sample-size sectors/industries with similar ones
         df = pd.DataFrame({'sector'  :[self.sector],
@@ -129,15 +116,42 @@ class Company_Info:
         df = aggregator.clean_industry_data(df)
         self.sector   = df.loc[0,'sector']
         self.industry = df.loc[0,'industry']
-
-        # Calculate market aggregate statistics while excluding self-data
-        self.sector_aggs, self.industry_aggs, aggs_date = get_market_aggs(ex_ticker=self.ticker)
+        print(f'---\nPreparing valuation information for {self.name} ({self.ticker}) (Sector: {self.sector}, Industry: {self.industry})\n---')
+        print(f'{self.quote_summary["longBusinessSummary"]}\n')
     
+    ### Add betas to the market data .csv file
+    
+    def tax_rate(self, tax=0.24):
+        # Define tax rate
+        # Jan-2022 corporate tax rate is 21%, but there is a proposal in congress to increase this to 26.5%
+        # As a result, I am assuming a roughly in-between tax rate of 24%
+        self.model_inputs['tax_rate'] = tax
+
+    def calculate_betas(self, force_update=False):
+        betas.unlevered_betas(file_path=self.market_data_path, tax=self.model_inputs['tax_rate'], force_update=force_update)
+
+    ### Calculate market aggregate statistics (while excluding self from averages)
+
+    def get_market_aggs(self, read=False):
+        if read == True:
+            # Read sector and industry averages from .csv files
+            self.sector_aggs   = pd.read_csv('sector_aggs.csv', index_col=0, header=[0,1])   # header argument recognizes multi-index columns
+            self.industry_aggs = pd.read_csv('industry_aggs.csv', index_col=0, header=[0,1])
+            aggs_date          = datetime.date.fromisoformat(sector_aggs.index.name)
+        else:
+            # Aggregate sector and industry averages from line-by-line market data .csv file
+            self.sector_aggs, self.industry_aggs, aggs_date = aggregator.industry_aggregates(self.market_data_path, ex_ticker=self.ticker)
+            aggs_date = datetime.date.fromisoformat(aggs_date)
+
+        # Calculate days since market data was updated; if too old (e.g. >3 months), recommend rerunning market data webscrape
+        today = datetime.date.today()
+        print(f'Sector and industry averages loaded as of {aggs_date} ({(today - aggs_date).days} days since last update)')
+
     ### Calculate DCF assumptions for growth, margins, sales-to-capital ratio, and cost of capital
     
     def growth(self, manual=False, years=5): # years: int >= 1
         # High-growth rate
-        if manual != False: # Manual input
+        if type(manual) == float or type(manual) == int: # Manual input
             self.model_inputs['growth_rate'] = manual
         
         else: # Market-based estimate
@@ -161,9 +175,10 @@ class Company_Info:
         self.model_inputs['growth_duration'] = years
 
 
-    def target_margin(self, manual=False, years=False): # years: int >= 1
+
+    def target_margin(self, manual=False, years=False, max_years=10): # years: int >= 1
         # Target operating income margin
-        if manual != False: # Manual input
+        if type(manual) == float or type(manual) == int: # Manual input
             self.model_inputs['target_margin'] = manual
 
         else: # Market-based estimate
@@ -173,7 +188,7 @@ class Company_Info:
             sect_TTM = self.sector_aggs  .loc[self.sector,  ('operatingMargins',['percentile_25','median','percentile_75'])].xs('operatingMargins')
             indu_TTM = self.industry_aggs.loc[self.industry,('operatingMargins',['percentile_25','median','percentile_75'])].xs('operatingMargins')
             
-            operating_margins = [self_TTM, self_4yr, sect_TTM.loc['percentile_75'], indu_TTM.loc['percentile_75']] # Use 75th percentile since target margin is supposed to be higher than median company
+            operating_margins = [self_TTM, self_4yr, sect_TTM.loc['percentile_75'], indu_TTM.loc['percentile_75']] # Use 75th percentile since I'm assuming target margin is aspirational and higher than median
             weights = [0.125, 0.125, 0.375, 0.375]
 
             print(f'Operating margins: {operating_margins}')
@@ -190,7 +205,7 @@ class Company_Info:
                 # Closer to 25th %ile : growth years + 2 years
                 # Below 25th %ile     : growth years + 3 years
 
-            print('Auto-calculating years to achieve target_margin based on number of growth years and market margins...')            
+            print('Auto-calculating years to achieve target_margin based on number of growth years and market margins...')
             self_margin    = np.average([self_TTM, self_4yr])
             market_margins = pd.concat([sect_TTM, indu_TTM], axis='columns').mean(axis='columns')
             midpoint_25_50 = market_margins.loc[['percentile_25','median']].mean(axis='index')
@@ -216,58 +231,146 @@ class Company_Info:
             else:
                 print('Error occurred while calculating target margin achievement year')
 
+            years = min(years, max_years)
+            
             self.model_inputs['years_to_target_margin'] = years
     
     def sales_to_capital(self):
         # Calculate sales to capital ratio
         invested_capital = self.balance_sheet['totalStockholderEquity'] + \
                            self.quote_summary['totalDebt'] - \
-                           self.balance_sheet['cash']
+                           self.quote_summary['totalCash']
         
         self.model_inputs['sales_to_capital'] = self.income_statement['totalRevenue'] / invested_capital
+        print('Current sales to capital ratio: {}'.format(self.model_inputs['sales_to_capital']))
     
-    def tax_rate(self, tax=0.24):
-        # Define tax rate
-        # Jan-2022 corporate tax rate is 21%, but there is a proposal in congress to increase this to 26.5%
-        # As a result, I am assuming a roughly in-between tax rate of 24%
-        self.model_inputs['tax_rate'] = tax
+    def cost_of_capital(self, wacc = False, cod = False, coe = False, erp = False): # Cost of debt is pre-tax
+        # Calculate weighted-average cost of capital (WACC)
+        if type(wacc) == float:
+            self.model_inputs['cost_of_capital'] = wacc
 
-    def cost_of_capital(self):
-        # Calculate levered Beta:
-        
-        market_cost_of_capital = companies['rf_rate'] # + market ERP
-        self.model_inputs['cost_of_capital'] = np.mean(industry_data.loc[self.industry,'cost_of_capital'])
+        else:
+            print('Auto-calculating weighting average cost of capital')
+            market_cap = self.quote_summary['marketCap']
+            total_debt = self.quote_summary['totalDebt']
+            d_e_ratio  = total_debt / (market_cap + total_debt)
+            print(f'Debt-to-equity ratio: {d_e_ratio}')
+            
+            # Cost of debt
+            if type(cod) == float:
+                None
+            else:
+                print('Auto-calculating cost of debt... (I recommend manually inputing cost of debt from sec filings as estimates can be inaccurate)')
+                interest_expense   = -self.income_statement.loc['interestExpense']
+                operating_income   = self.income_statement.loc['operatingIncome']
+                interest_coverage  = interest_expense / operating_income
+                effective_int_rate = interest_expense / total_debt
+                print(f'Effective interest rate: {effective_int_rate}')
+
+                credit_rating_df = pd.read_csv('synthetic_credit_rating.csv')
+
+                # Small firm interest rate spread (based on interest coverage ratio)
+                for i, threshold in enumerate(credit_rating_df.loc[:,'Interest Coverage-Small Firms']):
+                    if interest_coverage < threshold:
+                        higher_spread = credit_rating_df.loc[:,'Spread (2021)'].iloc[i]
+                        break
+
+                # Large firm interest rate spread (based on interest coverage ratio)
+                for i, threshold in enumerate(credit_rating_df.loc[:,'Interest Coverage-Large Firms']):
+                    if interest_coverage < threshold:
+                        lower_spread = credit_rating_df.loc[:,'Spread (2021)'].iloc[i]
+                        break
+
+                # Determine if small or large firm based on market cap
+                lower = 5000000000
+                upper = 10000000000
+                diff  = upper - lower
+                large_weighting = min(max((market_cap - lower), 0), diff) / diff
+                small_weighting = 1 - large_weighting                            
+
+                # Calculate interest rate based on synthetic rating
+                synthetic_int_rate = self.model_inputs['rf_rate'] + np.average([higher_spread, lower_spread], weights=[small_weighting, large_weighting])
+                print(f'Synthetic interest rate: {synthetic_int_rate}')
+
+                cod = np.average([effective_int_rate, synthetic_int_rate])
+
+            after_tax_cod = cod * (1-self.model_inputs['tax_rate'])
+            print(f'After-tax cost of debt: {after_tax_cod}')
+                
+            # Cost of equity
+            if type(coe) == float:
+                None
+            else:
+                print('Auto-calculating cost of equity...')
+                # Retrieve implied equity risk premium
+                if type(erp) == float:
+                    None
+                else:
+                    erp = companies['implied_erp']
+
+                # Retrieve unlevered beta for sector and industry
+                sector_u_beta   = self.sector_aggs  .loc[self.sector,  ('unleveredBeta','mean')] # Mean can be used since outliers have been excluded
+                industry_u_beta = self.industry_aggs.loc[self.industry,('unleveredBeta','mean')]
+
+                # Re-lever sector and industry beta and calculate cost of equity
+                sector_beta   = sector_u_beta   * (1 + (1-self.model_inputs['tax_rate']) * d_e_ratio)
+                industry_beta = industry_u_beta * (1 + (1-self.model_inputs['tax_rate']) * d_e_ratio)
+                sector_coe    = self.model_inputs['rf_rate'] + erp * sector_beta
+                industry_coe  = self.model_inputs['rf_rate'] + erp * industry_beta
+
+                # Retrieve company's levered beta
+                self_beta    = self.quote_summary['beta']
+
+                # Not all companies have enough history for a regression (levered) beta on Yahoo Finance
+                if type(self_beta) == float:
+                    self_coe = self.model_inputs['rf_rate'] + erp * self_beta
+                    coe     = [self_coe, sector_coe, industry_coe]
+                    weights = [0.05, 0.475, 0.475] # It's best to mostly rely on industry and sector beta to reduce variance
+                else:
+                    coe     = [sector_coe, industry_coe]
+                    weights = [0.5,0.5]                    
+
+                print(f'Levered betas: {[self_beta, sector_beta, industry_beta]}')
+                print(f'Costs of equity: {coe}')
+
+                # Calculate cost of equity
+                coe = np.average(coe, weights=weights)
+
+            print(f'Cost of equity: {coe}')
+
+            # Weighted average cost of capital
+            wacc = (coe * (1 - d_e_ratio)) + (after_tax_cod * d_e_ratio)
+            print(f'Weighted-average cost of capital: {wacc}')
+            
+        self.model_inputs['cost_of_capital'] = wacc
 
     def research_development(self):
-        self.model_inputs['rnd_amortization_years'] = 3
-
-        if self.rnd_adjustment == True:
-            rnd         = [self.income_statement.loc['researchDevelopment']]+ self.trend_summary.loc['researchDevelopment'].to_list()
-            weights     = [1]
-            years       = self.model_inputs['rnd_amortization_years']
-            time_offset = (self.latest_quarter_end.month - self.latest_year_end.month)/12 # figure out how to do months
-            if len(rnd) <= years:
-                rnd.append([rnd[-1]*(years-len(rnd)+1)])
-
-            for i in range(years):
-                if i == 0:
-                    weights.append(time_offset)
-                elif i == years - 1:
-                    weights.append(1 - time_offset)
-                else:
-                    weights.append(1)
-
-            new_rnd_expense  = rnd * weights * 1/years
-            rnd_differential = None
+        None
+        # In future, I may decide to add a method to capitalize R&D
+        # For now, I've decided not to for consistency with sector/industry data
     
     ### Prepare data for model
-    def company_dcf_data(self):
+    def gather_dcf_data(self):
         # Gather historical company data needed for DCF model
-        None
+        self.model_inputs['base_date']          = self.latest_quarter_end
+        self.model_inputs['base_revenue']       = self.income_statement['totalRevenue']
+        self.model_inputs['base_margin']        = self.income_statement['operatingMargin']
+        self.model_inputs['debt']               = self.quote_summary['totalDebt']
+        self.model_inputs['cash']               = self.quote_summary['totalCash']
+        self.model_inputs['shares_outstanding'] = self.quote_summary['sharesOutstanding']
     
-    def company_dcf_assumptions(self):
-        # Gather assumptions for growth, margins, sales-to-capital ratio, and cost of capital
-        None
+    def auto_generate_dcf_assumptions(self):
+        # Auto-generate assumptions for growth, margins, sales-to-capital ratio, and cost of capital
+        self.growth()
+        self.target_margin()
+        self.sales_to_capital()
+        self.tax_rate()
+        self.cost_of_capital()
+
+    def set_manual_dcf_assumptions(prior_NOL = 0, non_operating_assets = 0, minority_interests = 0):
+        self.model_inputs['prior_NOL']            = prior_NOL
+        self.model_inputs['non_operating_assets'] = non_operating_assets
+        self.model_inputs['minority_interests']   = minority_interests
     
     ### Printing methods
     
@@ -289,13 +392,18 @@ class Company_Info:
 
 FIVN = Company_Info(ticker_list[0])
 import pprint as pp
-#pp.pprint   (FIVN.__dict__)
+#pp.pprint(FIVN.__dict__)
+FIVN.tax_rate()
+FIVN.calculate_betas()
+FIVN.get_market_aggs()
 FIVN.growth()
 FIVN.target_margin()
-FIVN.tax_rate()
+FIVN.sales_to_capital()
+FIVN.cost_of_capital(cod=0.0576)
 
 print(FIVN.model_inputs)
 
+   
 
 def valuation_model(Company):
     # Valuation model
@@ -316,7 +424,7 @@ def valuation_model(Company):
                              'high_g_duration'       : 5,
                              'target_margin'         : 0.2,
                              'years_to_target_margin': 8,
-                             'base_prior_NOL'        : 0, # NOL is not available on Yahoo Finance, as it is an off-balance sheet item
+                             'prior_NOL'        : 0, # NOL is not available on Yahoo Finance, as it is an off-balance sheet item
                              'tax_rate'              : 0.25,
                              'sales_to_capital_ratio': 0.75,
                              'growth_wacc'           : 0.07543,
@@ -407,9 +515,9 @@ def valuation_model(Company):
     
     ### Create net operating loss line
     # Inputs
-    base_prior_NOL = 0
+    prior_NOL = 0
     
-    col_prior_NOL = [base_prior_NOL] # base year
+    col_prior_NOL = [prior_NOL] # base year
     for i in range(1, num_time_periods):
         if col_prior_NOL[i-1] <= dcf.Operating_Income[i-1]:
             col_prior_NOL.append(0) # cumulative net operating losses all used up

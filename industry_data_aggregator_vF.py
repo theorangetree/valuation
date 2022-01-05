@@ -1,11 +1,15 @@
 # Main function:
-# industry_aggregates(csv_path: str, ticker='----', write=False)
+    # industry_aggregates(csv_path: str, ticker='----', write=False)
 
 # Purpose:
-# Aggregate stock data by sector and industry from line-by-line stock data .csv file, excluding specified ticker
-# [Optional] If write=True, outputs aggregates as csv file
+    # Aggregate stock data by sector and industry from line-by-line stock data .csv file, excluding specified ticker
+    # [Optional] If write=True, outputs aggregates as csv file
 
 import pandas as pd
+
+# Set display options to show more rows and columns than default
+pd.set_option('display.max_columns', 50)
+pd.set_option('display.max_rows', 200)
 
 def filter_companies(df, ex_ticker):
     # [Optional ex_ticker argument] Exclude the valuation company ticker so that it is excluded from the averages
@@ -87,6 +91,6 @@ def industry_aggregates(csv_path, ex_ticker='----', write=False):
     
     return df_agg_sector, df_agg_industry, aggs_date
 
-# Uncomment to update local aggs files
-#industry_aggregates('market_data.csv', write=True)
-#industry_aggregates('market_data_synchronous.csv', write=True)
+# Uncomment to update local aggs files or run a test
+#print(industry_aggregates('market_data.csv', write=True))
+#print(industry_aggregates('market_data_synchronous.csv', write=True))
