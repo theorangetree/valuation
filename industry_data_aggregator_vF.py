@@ -65,32 +65,52 @@ def clean_industry_data(df):
     return df
 
 def percentile(n):
-    # Create percentile function usable with Pandas groupby agg
+    # Create percentile function usable with Pandas groupby().agg()
     def percentile_(x):
         return x.quantile(n)
     percentile_.__name__ = 'percentile_{:2.0f}'.format(n*100)
     return percentile_
 
-def industry_aggregates(csv_path, ex_ticker='----', write=False):
+def industry_aggregates(csv_path, ex_ticker='----', sales_to_capital=False, write=False):
     df = pd.read_csv(csv_path, index_col=0)
     aggs_date = df.index.name
 
     df = filter_companies(df, ex_ticker=ex_ticker)
     df = clean_industry_data(df)
 
+    df_agg_sector   = df.groupby('sector'  ).agg(['count', 'mean', percentile(0.25), 'median', percentile(0.75)])
     df_agg_industry = df.groupby('industry').agg(['count', 'mean', percentile(0.25), 'median', percentile(0.75)])
-    df_agg_sector   = df.groupby('sector').  agg(['count', 'mean', percentile(0.25), 'median', percentile(0.75)])
 
-    df_agg_industry.index.name = aggs_date
+    if sales_to_capital == True: # Requires Invested Capital column to be calculated first
+        # Identify rows where both invested capital and revenue are available (i.e. not null)
+        df['totalRevenueMask']    = df.totalRevenue   .mask(df.investedCapital.isnull())
+        df['investedCapitalMask'] = df.investedCapital.mask(df.totalRevenue   .isnull())
+
+        # Sum invested capital and revenue across sector and industry
+        sector_stc   = df.loc[:,['totalRevenueMask', 'investedCapitalMask', 'sector'  ]].groupby('sector'  ).agg(['sum'])
+        industry_stc = df.loc[:,['totalRevenueMask', 'investedCapitalMask', 'industry']].groupby('industry').agg(['sum'])
+
+        # Use the sums to calculate sales-to-capital ratios
+        sector_stc  [('salesToCapitalAggregate','aggregate')] = sector_stc.totalRevenueMask   / sector_stc.investedCapitalMask
+        industry_stc[('salesToCapitalAggregate','aggregate')] = industry_stc.totalRevenueMask / industry_stc.investedCapitalMask
+
+        # Join to main aggregates DataFrame
+        df_agg_sector   = df_agg_sector  .join(sector_stc, rsuffix='_R')
+        df_agg_industry = df_agg_industry.join(industry_stc, rsuffix='_R')
+    else:
+        print('Must run .calculated_fields() method before sales-to-capital ratio can be aggregated.')
+    
+    # Record date
     df_agg_sector.index.name   = aggs_date
+    df_agg_industry.index.name = aggs_date   
 
     # Output sector and industry aggregates as csv files
     if write == True:
-        df_agg_industry.to_csv('industry_aggs.csv')
         df_agg_sector.to_csv('sector_aggs.csv')
+        df_agg_industry.to_csv('industry_aggs.csv')
     
     return df_agg_sector, df_agg_industry, aggs_date
 
 # Uncomment to update local aggs files or run a test
 #print(industry_aggregates('market_data.csv', write=True))
-#print(industry_aggregates('market_data_synchronous.csv', write=True))
+#print(industry_aggregates('market_data_synchronous.csv', sales_to_capital=True, write=True))

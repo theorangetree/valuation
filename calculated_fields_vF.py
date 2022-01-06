@@ -28,11 +28,32 @@ def unlevered_betas(file_path, tax, force_update=False):
         print(f'Top and bottom {percent_excluded*100/2:.1f}% of unlevered betas excluded as outliers (cutoffs: [{low_cutoff:.3f}, {high_cutoff:.3f}])')
         
         df.to_csv(file_path)
+        print(f'Updated {file_path} with unlevered betas')
     else:
-        print(f'Unlevered beta has already been calculated so {file_path} was not updated. Set force_update=True to force an update.')
+        print(f'Unlevered betas have already been calculated so {file_path} was not updated. Set force_update=True to force an update.')
     
+    return df
+
+def sales_to_capital(file_path, force_update=False):
+    df = pd.read_csv(file_path, index_col=0)
+
+    update = True
+    if force_update != True and 'salesToCapitalIndividual' in df.columns:
+        update = False
+
+    if update == True:
+        # Calculate sales to capital ratios
+        df['bookEquity']               = (df.totalDebt / df.debtToEquity) * 100
+        df['investedCapital']          = df.bookEquity + df.totalDebt - df.totalCash
+        df['salesToCapitalIndividual'] = df.totalRevenue / df.investedCapital
+        
+        df.to_csv(file_path)
+        print(f'Updated {file_path} for sales-to-capital ratio')
+    else:
+        print(f'Sales-to-capital ratios have already been calculated so {file_path} was not updated. Set force_update=True to force an update.')
+
     return df
 
 # Uncomment to test
 #print(unlevered_betas(file_path='market_data_synchronous.csv', tax=0.24))
-
+#print(sales_to_capital(file_path='market_data_synchronous.csv'))

@@ -10,7 +10,7 @@ from dateutil.relativedelta import relativedelta
 from IPython.display import display
 import asyncio
 import yf_scraper_asyncio_vF       as scraper
-import unlevered_betas_vF          as betas
+import calculated_fields_vF        as fields
 import industry_data_aggregator_vF as aggregator
 
 #import nest_asyncio
@@ -105,6 +105,7 @@ class Company_Info:
         self.industry           = self.quote_summary['industry']
         self.latest_quarter_end = self.income_statement.name
         self.latest_year_end    = self.trend_summary.columns[0]
+        self.fields_calculated  = False
         self.model_inputs       = {}
 
         # Add risk-free rate
@@ -127,10 +128,16 @@ class Company_Info:
         # As a result, I am assuming a roughly in-between tax rate of 24%
         self.model_inputs['tax_rate'] = tax
 
-    def calculate_betas(self, force_update=False):
-        betas.unlevered_betas(file_path=self.market_data_path, tax=self.model_inputs['tax_rate'], force_update=force_update)
+    def calculated_fields(self, force_update=False):
+        # Calculate unlevered betas and market debt-to-equity
+        fields.unlevered_betas(file_path=self.market_data_path, tax=self.model_inputs['tax_rate'], force_update=force_update)
+        
+        # Calculate sales-to-capital ratios and invested capital
+        fields.sales_to_capital(file_path=self.market_data_path, force_update=force_update)
 
-    ### Calculate market aggregate statistics (while excluding self from averages)
+        self.fields_calculated = True
+
+    ### Calculate market aggregate statistics by sector and industry (while excluding self from averages)
 
     def get_market_aggs(self, read=False):
         if read == True:
@@ -140,7 +147,7 @@ class Company_Info:
             aggs_date          = datetime.date.fromisoformat(sector_aggs.index.name)
         else:
             # Aggregate sector and industry averages from line-by-line market data .csv file
-            self.sector_aggs, self.industry_aggs, aggs_date = aggregator.industry_aggregates(self.market_data_path, ex_ticker=self.ticker)
+            self.sector_aggs, self.industry_aggs, aggs_date = aggregator.industry_aggregates(self.market_data_path, ex_ticker=self.ticker, sales_to_capital=self.fields_calculated)
             aggs_date = datetime.date.fromisoformat(aggs_date)
 
         # Calculate days since market data was updated; if too old (e.g. >3 months), recommend rerunning market data webscrape
@@ -235,14 +242,41 @@ class Company_Info:
             
             self.model_inputs['years_to_target_margin'] = years
     
-    def sales_to_capital(self):
-        # Calculate sales to capital ratio
-        invested_capital = self.balance_sheet['totalStockholderEquity'] + \
+    def sales_to_capital(self, manual=False):
+        # Sales to invested capital ratio
+        if type(manual) == float or type(manual) == int:
+            self.model_inputs['sales_to_capital'] = manual
+
+        else: # Market-based estimate
+            print('Auto-calculating sales-to-capital ratio...')
+            # Calculate current invested capital and sales-to-capital ratio
+            self_inv_cap = self.balance_sheet['totalStockholderEquity'] + \
                            self.quote_summary['totalDebt'] - \
                            self.quote_summary['totalCash']
-        
-        self.model_inputs['sales_to_capital'] = self.income_statement['totalRevenue'] / invested_capital
-        print('Current sales to capital ratio: {}'.format(self.model_inputs['sales_to_capital']))
+            self_stc     = self.income_statement['totalRevenue'] / self_inv_cap
+
+            # Retrieve market sales-to-capital ratioe
+            sector_stc   = self.sector_aggs  .loc[self.sector  ,('salesToCapitalAggregate','aggregate')]
+            industry_stc = self.industry_aggs.loc[self.industry,('salesToCapitalAggregate','aggregate')]
+
+            sales_to_capital_ratios = [self_stc, sector_stc, industry_stc]
+            print(f'Sales-to-capital ratios: {sales_to_capital_ratios}')
+            
+            if self.quote_summary['totalCash'] >= self_inv_cap:
+                print('Warning: review current sales-to-capital ratio as a large portion of cash was subtracted from invested capital')
+                weights = [0.175, 0.55, 0.275]
+            else:
+                weights = [0.4, 0.4, 0.2]
+
+            # Drop negative ratios from the list
+            clean_ratios  = []
+            clean_weights = []
+            for ratio, weight in zip(sales_to_capital_ratios, weights):
+                if ratio > 0:
+                    clean_ratios .append(ratio)
+                    clean_weights.append(weight)
+
+        self.model_inputs['sales_to_capital'] = np.average(clean_ratios, weights=clean_weights)
     
     def cost_of_capital(self, wacc = False, cod = False, coe = False, erp = False): # Cost of debt is pre-tax
         # Calculate weighted-average cost of capital (WACC)
@@ -253,7 +287,8 @@ class Company_Info:
             print('Auto-calculating weighting average cost of capital')
             market_cap = self.quote_summary['marketCap']
             total_debt = self.quote_summary['totalDebt']
-            d_e_ratio  = total_debt / (market_cap + total_debt)
+            d_e_ratio  = total_debt / market_cap
+            debt_ratio = total_debt / (market_cap + total_debt)
             print(f'Debt-to-equity ratio: {d_e_ratio}')
             
             # Cost of debt
@@ -321,11 +356,11 @@ class Company_Info:
                 # Retrieve company's levered beta
                 self_beta    = self.quote_summary['beta']
 
-                # Not all companies have enough history for a regression (levered) beta on Yahoo Finance
+                # Not all companies have a regression (levered) beta on Yahoo Finance
                 if type(self_beta) == float:
                     self_coe = self.model_inputs['rf_rate'] + erp * self_beta
                     coe     = [self_coe, sector_coe, industry_coe]
-                    weights = [0.05, 0.475, 0.475] # It's best to mostly rely on industry and sector beta to reduce variance
+                    weights = [0.05, 0.475, 0.475] # It's best to rely on sector and industry beta
                 else:
                     coe     = [sector_coe, industry_coe]
                     weights = [0.5,0.5]                    
@@ -339,7 +374,7 @@ class Company_Info:
             print(f'Cost of equity: {coe}')
 
             # Weighted average cost of capital
-            wacc = (coe * (1 - d_e_ratio)) + (after_tax_cod * d_e_ratio)
+            wacc = (coe * (1 - debt_ratio)) + (after_tax_cod * debt_ratio)
             print(f'Weighted-average cost of capital: {wacc}')
             
         self.model_inputs['cost_of_capital'] = wacc
@@ -394,7 +429,7 @@ FIVN = Company_Info(ticker_list[0])
 import pprint as pp
 #pp.pprint(FIVN.__dict__)
 FIVN.tax_rate()
-FIVN.calculate_betas()
+FIVN.calculated_fields()
 FIVN.get_market_aggs()
 FIVN.growth()
 FIVN.target_margin()
