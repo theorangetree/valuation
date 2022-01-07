@@ -13,9 +13,6 @@ import yf_scraper_asyncio_vF       as scraper
 import calculated_fields_vF        as fields
 import industry_data_aggregator_vF as aggregator
 
-#import nest_asyncio
-#nest_asyncio.apply()
-
 # Set display options to show more rows and columns than default
 pd.set_option('display.max_columns', 50)
 pd.set_option('display.max_rows', 100)
@@ -25,15 +22,10 @@ pd.set_option('display.max_rows', 100)
 #ticker_1 = input("Type a US stock ticker: ")
 #ticker_1 = 'FIVN'
 
-#industry = pd.read_csv("2021 Damodaran Data.csv")
-#print(industry.columns)
-
 t0 = time.time()
 tp0 = time.process_time()
 
 ticker_list = ['FIVN'] # List of companies we want to value
-
-
 
 # This asyncio function returns a dictionary with nested dictionaries for each ticker:
 # {*ticker*: {*webpage or financial statement*: {key: value}}}
@@ -120,10 +112,10 @@ class Company_Info:
         print(f'---\nPreparing valuation information for {self.name} ({self.ticker}) (Sector: {self.sector}, Industry: {self.industry})\n---')
         print(f'{self.quote_summary["longBusinessSummary"]}\n')
     
-    ### Add betas to the market data .csv file
+    ### Add calculated fields to the market data .csv file
     
     def tax_rate(self, tax=0.24):
-        # Define tax rate
+        # Define tax rate for calculating unlevered beta
         # Jan-2022 corporate tax rate is 21%, but there is a proposal in congress to increase this to 26.5%
         # As a result, I am assuming a roughly in-between tax rate of 24%
         self.model_inputs['tax_rate'] = tax
@@ -180,8 +172,6 @@ class Company_Info:
 
         # Years of high-growth
         self.model_inputs['growth_duration'] = years
-
-
 
     def target_margin(self, manual=False, years=False, max_years=10): # years: int >= 1
         # Target operating income margin
@@ -275,23 +265,22 @@ class Company_Info:
                 if ratio > 0:
                     clean_ratios .append(ratio)
                     clean_weights.append(weight)
-
         self.model_inputs['sales_to_capital'] = np.average(clean_ratios, weights=clean_weights)
     
-    def cost_of_capital(self, wacc = False, cod = False, coe = False, erp = False): # Cost of debt is pre-tax
-        # Calculate weighted-average cost of capital (WACC)
+    def cost_of_capital(self, wacc = False, cod = False, coe = False, erp = False, mature_wacc = False): # Cost of debt is pre-tax
+        ### Weighted-average cost of capital (WACC)
         if type(wacc) == float:
             self.model_inputs['cost_of_capital'] = wacc
 
         else:
-            print('Auto-calculating weighting average cost of capital')
+            print('Auto-calculating weighted-average cost of capital')
             market_cap = self.quote_summary['marketCap']
             total_debt = self.quote_summary['totalDebt']
             d_e_ratio  = total_debt / market_cap
             debt_ratio = total_debt / (market_cap + total_debt)
-            print(f'Debt-to-equity ratio: {d_e_ratio}')
+            print(f'Market debt-to-equity ratio: {d_e_ratio}')
             
-            # Cost of debt
+            ## Cost of debt
             if type(cod) == float:
                 None
             else:
@@ -332,7 +321,7 @@ class Company_Info:
             after_tax_cod = cod * (1-self.model_inputs['tax_rate'])
             print(f'After-tax cost of debt: {after_tax_cod}')
                 
-            # Cost of equity
+            ## Cost of equity
             if type(coe) == float:
                 None
             else:
@@ -375,9 +364,18 @@ class Company_Info:
 
             # Weighted average cost of capital
             wacc = (coe * (1 - debt_ratio)) + (after_tax_cod * debt_ratio)
-            print(f'Weighted-average cost of capital: {wacc}')
-            
-        self.model_inputs['cost_of_capital'] = wacc
+            self.model_inputs['cost_of_capital'] = wacc
+
+        print(f'Weighted-average cost of capital: {wacc}')
+
+        ### Mature (i.e. terminal) WACC
+        if type(mature_wacc) == float:
+            self.model_inputs['mature_wacc'] = mature_wacc
+        else:
+            print('Auto-estimating mature WACC...')
+            mature_wacc = self.model_inputs['rf_rate'] + 0.045 # This is an approximation of market average cost of capital, which mature companies tend to approach
+            self.model_inputs['mature_wacc'] = min([wacc, np.average([wacc, mature_wacc])])
+        print(f'Mature WACC: {self.model_inputs["mature_wacc"]}')
 
     def research_development(self):
         None
@@ -385,24 +383,31 @@ class Company_Info:
         # For now, I've decided not to for consistency with sector/industry data
     
     ### Prepare data for model
+    def prepare_market_data(self, tax): # Recommend marginal tax rate (i.e. corporate tax rate)
+        self.tax_rate(tax=tax)
+        self.calculated_fields()
+        self.get_market_aggs()
+    
+    def auto_generate_dcf_assumptions(self, growth=False, growth_years=5, margin=False, margin_years=False, sales_to_capital=False,
+                                      wacc=False, cod=False, coe=False, erp=False, mature_wacc=False):
+        # Auto-generate assumptions for growth, margins, sales-to-capital ratio, and cost of capital
+        self.growth          (manual = growth, years = growth_years)
+        self.target_margin   (manual = margin, years = margin_years)
+        self.sales_to_capital(manual = sales_to_capital)
+        self.cost_of_capital (wacc = wacc, cod = cod, coe = coe, erp = erp, mature_wacc = mature_wacc)
+        
     def gather_dcf_data(self):
         # Gather historical company data needed for DCF model
-        self.model_inputs['base_date']          = self.latest_quarter_end
+        self.model_inputs['base_date']          = self.latest_quarter_end.date()
+        self.model_inputs['base_growth']        = self.quote_summary['revenueGrowth']
         self.model_inputs['base_revenue']       = self.income_statement['totalRevenue']
         self.model_inputs['base_margin']        = self.income_statement['operatingMargin']
         self.model_inputs['debt']               = self.quote_summary['totalDebt']
         self.model_inputs['cash']               = self.quote_summary['totalCash']
         self.model_inputs['shares_outstanding'] = self.quote_summary['sharesOutstanding']
-    
-    def auto_generate_dcf_assumptions(self):
-        # Auto-generate assumptions for growth, margins, sales-to-capital ratio, and cost of capital
-        self.growth()
-        self.target_margin()
-        self.sales_to_capital()
-        self.tax_rate()
-        self.cost_of_capital()
+        self.model_inputs['current_price']      = self.quote_summary['regularMarketPrice']
 
-    def set_manual_dcf_assumptions(prior_NOL = 0, non_operating_assets = 0, minority_interests = 0):
+    def set_manual_dcf_data(self, prior_NOL = 0, non_operating_assets = 0, minority_interests = 0):
         self.model_inputs['prior_NOL']            = prior_NOL
         self.model_inputs['non_operating_assets'] = non_operating_assets
         self.model_inputs['minority_interests']   = minority_interests
@@ -428,19 +433,188 @@ class Company_Info:
 FIVN = Company_Info(ticker_list[0])
 import pprint as pp
 #pp.pprint(FIVN.__dict__)
-FIVN.tax_rate()
-FIVN.calculated_fields()
-FIVN.get_market_aggs()
-FIVN.growth()
-FIVN.target_margin()
-FIVN.sales_to_capital()
-FIVN.cost_of_capital(cod=0.0576)
+FIVN.prepare_market_data(tax=0.24)
+FIVN.auto_generate_dcf_assumptions(cod=0.0576)
+FIVN.gather_dcf_data()
+FIVN.set_manual_dcf_data(prior_NOL=0)
 
 print(FIVN.model_inputs)
 
-   
+def valuation_model(model_inputs: dict, terminal_year = 11):
+    # Discounted Cash Flow (DCF) valuation model to value a single stock
+    
+    ### Construct and empty data frame of size (no. of time periods x no. of DCF items)
+    dcf_dict = {}
 
-def valuation_model(Company):
+    # Default is 12 time periods: i.e. Base Year + 10 Years + Terminal Year   
+    num_time_periods = terminal_year + 1
+    # Create a list of dates containing the end date of each time period (year)
+    year_ends = []
+    for i in range(num_time_periods):
+        year_ends.append(model_inputs['base_date'] + relativedelta(years=i))
+
+    dcf_dict['Year_Ended'] = year_ends
+
+    # Add empty placeholder values for each DCF item
+    dcf_items = ['Revenue_Growth','Revenue','Operating_Margin','Operating_Income','Prior_Net_Operating_Loss',
+                 'Taxable_Operating_Income','Tax_Rate','After_Tax_Operating_Income','Sales_to_Capital',
+                 'Reinvestment','FCFF','Cost_of_Capital','Discount_Factor','PV(FCFF)']
+    for item in dcf_items:
+        dcf_dict[item] = [0] * num_time_periods
+
+    # Construct placeholder DataFrame
+    dcf = pd.DataFrame(dcf_dict).set_index('Year_Ended')
+   
+    ### Create the three stages of revenue growth (high-growth, mature-growth, terminal growth)
+    # Inputs
+    high_g            = model_inputs['growth_rate']         # High-growth stage growth rate
+    high_g_duration   = model_inputs['growth_duration']     # Length of high-growth stage (years)
+    mature_g_duration = terminal_year - high_g_duration - 1 # Length of mature-growth stage
+    terminal_g        = model_inputs['rf_rate']             # Terminal growth rate
+
+    # Revenue growth
+    col_revenue_growth =  [model_inputs['base_growth']] # Base year (for reference only)
+    col_revenue_growth += [high_g]*(high_g_duration) # High-growth stage
+    col_revenue_growth += np.linspace(high_g, terminal_g, num = mature_g_duration + 2).tolist()[1:-1] # Mature-growth stage (indexing excludes one year of high-growth and one year of terminal growth rate)
+    col_revenue_growth += [terminal_g] # Terminal growth rate
+    
+    dcf.Revenue_Growth = col_revenue_growth
+
+    ### Create revenue line
+    # Base year
+    col_revenue = [model_inputs['base_revenue']]
+    # Calculate revenue through the terminal year using revenue growth rates
+    for i in range(1, num_time_periods):
+        col_revenue.append(col_revenue[i-1] * (1 + dcf.Revenue_Growth[i]))
+    
+    dcf.Revenue = col_revenue
+    
+    ### Create operating margin line
+    # Inputs
+    base_margin   = model_inputs['base_margin']
+    target_margin = model_inputs['target_margin']
+    years_to_target_margin = model_inputs['years_to_target_margin']
+
+    # Operating margins
+    col_operating_margin = np.linspace(base_margin, target_margin, num = years_to_target_margin + 1).tolist() # Base year through first target margin year
+    col_operating_margin += [target_margin] * (num_time_periods - years_to_target_margin - 1) # Remaing years, including terminal year
+    
+    dcf.Operating_Margin = col_operating_margin
+    
+    ### Create operating income line
+    # No inputs needed
+    dcf.Operating_Income = dcf.Revenue * dcf.Operating_Margin
+    
+    ### Create net operating loss line
+    # Base year
+    col_prior_NOL = [model_inputs['prior_NOL']]
+    # Calculate net operating loss through the terminal year
+    for i in range(1, num_time_periods):
+        if col_prior_NOL[i-1] <= dcf.Operating_Income[i-1]:
+            col_prior_NOL.append(0) # cumulative net operating losses all used up
+        else:
+            col_prior_NOL.append(col_prior_NOL[i-1] - dcf.Operating_Income[i-1]) # carry over net operating losses
+    
+    dcf.Prior_Net_Operating_Loss = col_prior_NOL
+    
+    ### Create taxable operating income line:
+    # No inputs needed
+    col_taxable_operating_income = []
+    # Calculate taxable operating income through the terminal year
+    for i in range(num_time_periods):
+        if dcf.Prior_Net_Operating_Loss[i] >= dcf.Operating_Income[i]:
+            col_taxable_operating_income.append(0) # No taxable income
+        else:
+            col_taxable_operating_income.append(dcf.Operating_Income[i] - dcf.Prior_Net_Operating_Loss[i])
+    
+    dcf.Taxable_Operating_Income = col_taxable_operating_income
+    
+    ### Create tax rate line
+    dcf.Tax_Rate = model_inputs['tax_rate']
+    
+    ### Calculate after-tax operating income line
+    dcf['After_Tax_Operating_Income'] = dcf.Operating_Income - (dcf.Taxable_Operating_Income * dcf.Tax_Rate)
+
+    ### Create sales-to-capital ratio line
+    dcf.Sales_to_Capital = model_inputs['sales_to_capital']
+      
+    ### Create reinvestment line
+    # No inputs needed
+    col_reinvestment = [0] # Base year
+    # Calculate capital reinvestment amounts (needed for growth) through the terminal year
+    for i in range(1, num_time_periods):
+        col_reinvestment.append((dcf.Revenue[i] - dcf.Revenue[i-1]) / dcf.Sales_to_Capital[i])
+    
+    dcf.Reinvestment = col_reinvestment
+    
+    ### Create free cash flow to firm (FCFF) line
+    dcf.FCFF = dcf['After_Tax_Operating_Income'] - dcf.Reinvestment
+    dcf.FCFF.iat[0] = 0 # Set base year FCFF to zero, since those cash flows have already been recognized
+    
+    ### Create cost of capital line
+    # Inputs
+    growth_wacc              = model_inputs['cost_of_capital']
+    growth_wacc_duration     = model_inputs['growth_duration']
+    terminal_cost_of_capital = model_inputs['mature_wacc']
+
+    # Weighted-average cost of capital
+    col_cost_of_capital =  [0] # Base year
+    col_cost_of_capital += [growth_wacc] * growth_wacc_duration # Growth years
+    col_cost_of_capital += np.linspace(growth_wacc, terminal_cost_of_capital, num = terminal_year - growth_wacc_duration + 1).tolist()[1:] # Mature years through terminal year. Indexing excludes one year of growth-stage WACC.
+    
+    dcf.Cost_of_Capital = col_cost_of_capital
+    
+    ### Create discount factor line
+    # No inputs needed
+    col_discount_factor = [1] # Base year
+    # Calculate discount factor through the terminal year using WACC
+    for i in range(1, num_time_periods):
+        col_discount_factor.append(col_discount_factor[i-1] / (1 + dcf.Cost_of_Capital[i]))
+    
+    dcf.Discount_Factor = col_discount_factor
+    
+    ### Create present value of free cash flow line
+    dcf['PV(FCFF)'] = dcf.FCFF * dcf.Discount_Factor
+    
+    ### Show the completed dcf (without terminal value) transposed
+    print(dcf.transpose())
+    dcf.transpose().to_csv('dcf.csv')
+    
+    ############# Finishing the Valuation #############
+    # Calculate cumulative PV(FCFF) for pre-terminal years
+    pv_before_terminal = dcf['PV(FCFF)'].iloc[:-1].sum()
+    print(f'Present value of {terminal_year-1} years cash flows before terminal year: {pv_before_terminal}')
+    # Calcualte PV(terminal value)
+    terminal_value    = dcf.iloc[-1].loc['FCFF'] / (dcf.iloc[-1].loc['Cost_of_Capital'] - model_inputs['rf_rate'])
+    pv_terminal_value = terminal_value * dcf.iloc[-2].loc['Discount_Factor'] # Discount terminal value back to present
+    print(f'Present value of terminal cash flows in perpetuity: {pv_terminal_value}')
+    # Calculate total present value of operations
+    total_pv = pv_before_terminal + pv_terminal_value
+    print(f'Total present value of cash flows from operations: {total_pv}')
+    
+    # Inputs for final valuation
+    debt                 = model_inputs['debt']
+    cash                 = model_inputs['cash']
+    non_operating_assets = model_inputs['non_operating_assets']
+    minority_interests   = model_inputs['minority_interests']
+    shares_outstanding   = model_inputs['shares_outstanding']
+    current_price        = model_inputs['current_price']
+    # Calculate final estimated value
+    equity_value    = total_pv + cash - debt + non_operating_assets + minority_interests
+    value_per_share = equity_value / shares_outstanding
+    price_to_value  = current_price / value_per_share
+    
+    print(f'Total present value of cash flows to shareholders = {equity_value}')
+    print(f'Common shares outstanding = {shares_outstanding}')    
+    print(f'\nEstimated value per share = ${value_per_share:.2f}\n---')
+    print(f'\nCurrent price per share = ${current_price:.2f}\n---')
+    print(f'\nPrice to value ratio: {price_to_value:.3f}\n---')
+    
+    return
+
+valuation_model(FIVN.model_inputs)
+
+def valuation_model_original(Company):
     # Valuation model
     
     # Company related data and inputs
@@ -464,6 +638,7 @@ def valuation_model(Company):
                              'sales_to_capital_ratio': 0.75,
                              'growth_wacc'           : 0.07543,
                              'growth_wacc_duration'  : 5,
+                             'mature_wacc'           : rfr + 0.045
                              'non_operating_assets'  : 0, # Parameter that probably won't be used
                              'minority_interests'    : 0  # Parameter that probably won't be used
                              },
