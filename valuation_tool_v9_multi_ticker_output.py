@@ -24,7 +24,7 @@ pd.set_option('display.max_rows', 100)
 t0 = time.time()
 tp0 = time.process_time()
 
-ticker_list = ['FIVN'] # List of companies we want to value
+ticker_list = ['FIVN','ASAN'] # List of companies we want to value
 
 # This asyncio function returns a dictionary with nested dictionaries for each ticker:
     # {*ticker*: {*webpage or financial statement*: {key: value}}}
@@ -438,7 +438,7 @@ class Company_Info:
 
 
 
-def valuation_model(model_inputs: dict, terminal_year = 11, write=False):
+def valuation_model(model_inputs: dict, terminal_year = 11):
     # Discounted Cash Flow (DCF) valuation model to value a single stock
     
     ### Construct and empty data frame of size (no. of time periods x no. of DCF items)
@@ -450,21 +450,21 @@ def valuation_model(model_inputs: dict, terminal_year = 11, write=False):
     year_ends = []
     for i in range(num_time_periods):
         year_ends.append(model_inputs['base_date'] + relativedelta.relativedelta(years=i))
-    year_ends[0]  = year_ends[0].strftime('%Y-%m-%d')  + ' (Base)'
-    year_ends[-1] = year_ends[-1].strftime('%Y-%m-%d') + ' (Terminal)' 
+    #year_ends[0]  = year_ends[0].strftime('%Y-%m-%d')  + ' (Base)'
+    #year_ends[-1] = year_ends[-1].strftime('%Y-%m-%d') + ' (Terminal)' 
 
     
-    dcf_dict['Year_Ended'] = year_ends
+    dcf_dict['Year Ended'] = year_ends
 
     # Add empty placeholder values for each DCF item
-    dcf_items = ['Revenue_Growth','Revenue','Operating_Margin','Operating_Income','Prior_Net_Operating_Loss',
-                 'Taxable_Operating_Income','Tax_Rate','After_Tax_Operating_Income','Sales_to_Capital',
-                 'Reinvestment','FCFF','Cost_of_Capital','Discount_Factor','PV(FCFF)']
+    dcf_items = ['Revenue Growth','Revenue','Operating Margin','Operating Income','Prior Net Operating Loss',
+                 'Taxable Operating Income','Tax Rate','After-Tax Operating Income','Sales to Capital',
+                 'Reinvestment','Free Cash Flow to Firm','Cost of Capital','Discount Factor','PV (Free Cash Flow to Firm)']
     for item in dcf_items:
         dcf_dict[item] = [0] * num_time_periods
 
     # Construct placeholder DataFrame
-    dcf = pd.DataFrame(dcf_dict).set_index('Year_Ended')
+    dcf = pd.DataFrame(dcf_dict).set_index('Year Ended')
    
     ### Create the three stages of revenue growth (high-growth, mature-growth, terminal growth)
     # Inputs
@@ -479,16 +479,16 @@ def valuation_model(model_inputs: dict, terminal_year = 11, write=False):
     col_revenue_growth += np.linspace(high_g, terminal_g, num = mature_g_duration + 2).tolist()[1:-1] # Mature-growth stage (indexing excludes one year of high-growth and one year of terminal growth rate)
     col_revenue_growth += [terminal_g] # Terminal growth rate
     
-    dcf.Revenue_Growth = col_revenue_growth
+    dcf['Revenue Growth'] = col_revenue_growth
 
     ### Create revenue line
     # Base year
     col_revenue = [model_inputs['base_revenue']]
     # Calculate revenue through the terminal year using revenue growth rates
     for i in range(1, num_time_periods):
-        col_revenue.append(col_revenue[i-1] * (1 + dcf.Revenue_Growth[i]))
+        col_revenue.append(col_revenue[i-1] * (1 + dcf['Revenue Growth'][i]))
     
-    dcf.Revenue = col_revenue
+    dcf['Revenue'] = col_revenue
     
     ### Create operating margin line
     # Inputs
@@ -500,57 +500,57 @@ def valuation_model(model_inputs: dict, terminal_year = 11, write=False):
     col_operating_margin = np.linspace(base_margin, target_margin, num = years_to_target_margin + 1).tolist() # Base year through first target margin year
     col_operating_margin += [target_margin] * (num_time_periods - years_to_target_margin - 1) # Remaing years, including terminal year
     
-    dcf.Operating_Margin = col_operating_margin
+    dcf['Operating Margin'] = col_operating_margin
     
     ### Create operating income line
     # No inputs needed
-    dcf.Operating_Income = dcf.Revenue * dcf.Operating_Margin
+    dcf['Operating Income'] = dcf['Revenue'] * dcf['Operating Margin']
     
     ### Create net operating loss line
     # Base year
     col_prior_NOL = [model_inputs['prior_NOL']]
     # Calculate net operating loss through the terminal year
     for i in range(1, num_time_periods):
-        if col_prior_NOL[i-1] <= dcf.Operating_Income[i-1]:
+        if col_prior_NOL[i-1] <= dcf['Operating Income'][i-1]:
             col_prior_NOL.append(0) # cumulative net operating losses all used up
         else:
-            col_prior_NOL.append(col_prior_NOL[i-1] - dcf.Operating_Income[i-1]) # carry over net operating losses
+            col_prior_NOL.append(col_prior_NOL[i-1] - dcf['Operating Income'][i-1]) # carry over net operating losses
     
-    dcf.Prior_Net_Operating_Loss = col_prior_NOL
+    dcf['Prior Net Operating Loss'] = col_prior_NOL
     
     ### Create taxable operating income line:
     # No inputs needed
     col_taxable_operating_income = []
     # Calculate taxable operating income through the terminal year
     for i in range(num_time_periods):
-        if dcf.Prior_Net_Operating_Loss[i] >= dcf.Operating_Income[i]:
+        if dcf['Prior Net Operating Loss'][i] >= dcf['Operating Income'][i]:
             col_taxable_operating_income.append(0) # No taxable income
         else:
-            col_taxable_operating_income.append(dcf.Operating_Income[i] - dcf.Prior_Net_Operating_Loss[i])
+            col_taxable_operating_income.append(dcf['Operating Income'][i] - dcf['Prior Net Operating Loss'][i])
     
-    dcf.Taxable_Operating_Income = col_taxable_operating_income
+    dcf['Taxable Operating Income'] = col_taxable_operating_income
     
     ### Create tax rate line
-    dcf.Tax_Rate = model_inputs['tax_rate']
+    dcf['Tax Rate'] = model_inputs['tax_rate']
     
     ### Calculate after-tax operating income line
-    dcf['After_Tax_Operating_Income'] = dcf.Operating_Income - (dcf.Taxable_Operating_Income * dcf.Tax_Rate)
+    dcf['After-Tax Operating Income'] = dcf['Operating Income'] - (dcf['Taxable Operating Income'] * dcf['Tax Rate'])
 
     ### Create sales-to-capital ratio line
-    dcf.Sales_to_Capital = model_inputs['sales_to_capital']
+    dcf['Sales to Capital'] = model_inputs['sales_to_capital']
       
     ### Create reinvestment line
     # No inputs needed
     col_reinvestment = [0] # Base year
     # Calculate capital reinvestment amounts (needed for growth) through the terminal year
     for i in range(1, num_time_periods):
-        col_reinvestment.append((dcf.Revenue[i] - dcf.Revenue[i-1]) / dcf.Sales_to_Capital[i])
+        col_reinvestment.append((dcf['Revenue'][i] - dcf['Revenue'][i-1]) / dcf['Sales to Capital'][i])
     
-    dcf.Reinvestment = col_reinvestment
+    dcf['Reinvestment'] = col_reinvestment
     
     ### Create free cash flow to firm (FCFF) line
-    dcf.FCFF = dcf['After_Tax_Operating_Income'] - dcf.Reinvestment
-    dcf.FCFF.iat[0] = 0 # Set base year FCFF to zero, since those cash flows have already been recognized
+    dcf['Free Cash Flow to Firm'] = dcf['After-Tax Operating Income'] - dcf['Reinvestment']
+    dcf['Free Cash Flow to Firm'].iat[0] = np.nan # Set base year FCFF to zero, since those cash flows have already been recognized
     
     ### Create cost of capital line
     # Inputs
@@ -563,30 +563,30 @@ def valuation_model(model_inputs: dict, terminal_year = 11, write=False):
     col_cost_of_capital += [growth_wacc] * growth_wacc_duration # Growth years
     col_cost_of_capital += np.linspace(growth_wacc, terminal_cost_of_capital, num = terminal_year - growth_wacc_duration + 1).tolist()[1:] # Mature years through terminal year. Indexing excludes one year of growth-stage WACC.
     
-    dcf.Cost_of_Capital = col_cost_of_capital
+    dcf['Cost of Capital'] = col_cost_of_capital
     
     ### Create discount factor line
     # No inputs needed
     col_discount_factor = [1] # Base year
     # Calculate discount factor through the terminal year using WACC
     for i in range(1, num_time_periods):
-        col_discount_factor.append(col_discount_factor[i-1] / (1 + dcf.Cost_of_Capital[i]))
+        col_discount_factor.append(col_discount_factor[i-1] / (1 + dcf['Cost of Capital'][i]))
     
-    dcf.Discount_Factor         = col_discount_factor
-    dcf.Discount_Factor.iat[-1] = np.nan # Terminal year discount factor is not relevant to terminal value calculation
+    dcf['Discount Factor']         = col_discount_factor
+    dcf['Discount Factor'].iat[-1] = np.nan # Terminal year discount factor is not relevant to terminal value calculation
     
     ### Create present value of free cash flow line
-    dcf['PV(FCFF)']         = dcf.FCFF * dcf.Discount_Factor
-    dcf['PV(FCFF)'].iat[-1] = np.nan # Terminal year cash flow is included in terminal value calculation
+    dcf['PV (Free Cash Flow to Firm)']         = dcf['Free Cash Flow to Firm'] * dcf['Discount Factor']
+    dcf['PV (Free Cash Flow to Firm)'].iat[-1] = np.nan # Terminal year cash flow is included in terminal value calculation
 
     
     ############# Calculate Terminal Value and Finish the Valuation #############
     # Calculate cumulative PV(FCFF) for pre-terminal years
-    pv_before_terminal = dcf['PV(FCFF)'].iloc[:-1].sum()
+    pv_before_terminal = dcf['PV (Free Cash Flow to Firm)'].iloc[:-1].sum()
     print(f'\nPresent value of {terminal_year-1} years of cash flows before terminal year: {pv_before_terminal}')
     # Calcualte PV(terminal value)
-    terminal_value    = dcf.iloc[-1].loc['FCFF'] / (dcf.iloc[-1].loc['Cost_of_Capital'] - model_inputs['rf_rate'])
-    pv_terminal_value = terminal_value * dcf.iloc[-2].loc['Discount_Factor'] # Discount terminal value back to present
+    terminal_value    = dcf.iloc[-1].loc['Free Cash Flow to Firm'] / (dcf.iloc[-1].loc['Cost of Capital'] - model_inputs['rf_rate'])
+    pv_terminal_value = terminal_value * dcf.iloc[-2].loc['Discount Factor'] # Discount terminal value back to present
     print(f'Present value of terminal cash flows in perpetuity: {pv_terminal_value}')
     # Calculate total present value of operations
     total_pv = pv_before_terminal + pv_terminal_value
@@ -611,87 +611,101 @@ def valuation_model(model_inputs: dict, terminal_year = 11, write=False):
     print(f'\nPrice to value ratio: {value_to_price:.3f}\n---')
 
     ############# Output completed DCF and terminal value #############
-    if write == True:
-        dcf_output = dcf.transpose()
-        dcf_output.index.set_names(f'{model_inputs["name"]} ({model_inputs["ticker"]})', inplace=True)
+    ticker = model_inputs['ticker']
+    name   = model_inputs['name']
 
-        final_dict      = {'PV_DCF_Cash_Flows'      : pv_before_terminal,
-                           'PV_Terminal_Value'      : pv_terminal_value,
-                           'Total_Present_Value'    : total_pv,
-                           '- Debt'                 : debt,
-                           '- Minority_Interests'   : minority_interests,
-                           '+ Cash'                 : cash,
-                           '+ Non_Operating_Assets' : non_operating_assets,
-                           '---'                    : np.nan,
-                           'Value_of_Equity'        : equity_value,
-                           'Shares_Outstanding'     : shares_outstanding,
-                           'Value_per_Share'        : value_per_share,
-                           'Current_Stock_Price'    : current_price,
-                           'Value_to_Price_Ratio'   : value_to_price
-                           }
-        final_output         = pd.DataFrame.from_dict(final_dict, orient='index')
-        final_output         = pd.concat([dcf_output.iloc[:,-1], final_output], axis = 'rows')
-        final_output.columns = [dcf_output.columns[-1]]
-        final_output.index.set_names(f'{model_inputs["name"]} ({model_inputs["ticker"]})', inplace=True)
+    dcf_output = dcf.transpose()
 
-        def format_excel_rows(worksheet: object, row_indices: list, cell_format: object):
+    final_dict = {'PV (DCF Cash Flows)'    : pv_before_terminal,
+                  'PV (Terminal Value)'    : pv_terminal_value,
+                  'Total Present Value'    : total_pv,
+                  '- Debt'                 : debt,
+                  '- Minority Interests'   : minority_interests,
+                  '+ Cash'                 : cash,
+                  '+ Non Operating Assets' : non_operating_assets,
+                  'Value of Equity'        : equity_value,
+                  'Shares Outstanding'     : shares_outstanding,
+                  'Value per Share'        : value_per_share,
+                  'Current Stock Price'    : current_price,
+                  'Value-to-Price Ratio'   : value_to_price
+                  }
+    final_output = pd.DataFrame.from_dict(final_dict, orient='index')
+    
+    return ticker, name, dcf_output, final_output
+
+def export_dcf(writer, tuple_list): # [(ticker, name, dcf_output, final_output)]
+    for ticker, name, dcf_output, final_output in tuple_list:
+        dcf_output.insert(11,'',np.nan,allow_duplicates=True)
+        dcf_output.insert(1 ,'',np.nan,allow_duplicates=True)
+        dcf_output.index.set_names('Year Ended', inplace=True)
+
+        def format_excel_rows(worksheet: object, row_indices: list, cell_format: object, row_offset=0):
             for row in row_indices:
-                worksheet.set_row(row, None, cell_format)
+                worksheet.set_row(row_offset + row, None, cell_format)
         
-        with pd.ExcelWriter(f'DCF valuation.xlsx') as writer:
-            dcf_output  .to_excel(writer, sheet_name='DCF')
-            final_output.to_excel(writer, sheet_name='Final Value')
+        start_row   = 3
+        dcf_height  = dcf_output.shape[0]
+        dcf_width   = dcf_output.shape[1]
+        final_index = final_output.index.to_series()
 
-            # Assign workbook and worksheet objects to variables
-            workbook          = writer.book
-            dcf_sheet         = writer.sheets['DCF']
-            final_value_sheet = writer.sheets['Final Value']
+        # Write data frames to Excel
+        dcf_output  .to_excel(writer, sheet_name=ticker, startrow=start_row)
+        final_output.to_excel(writer, sheet_name=ticker, header=False, index=False, startrow= start_row + dcf_height + 2, startcol= dcf_width)
+        final_index .to_excel(writer, sheet_name=ticker, header=False, index=False, startrow= start_row + dcf_height + 2, startcol= dcf_width + 1)
+
+        # Assign workbook and worksheet objects to variables
+        workbook     = writer.book
+        output_sheet = writer.sheets[ticker]
+
+        # Add title and base/terminal year
+        title_format        = workbook.add_format({'bold':True, 'color':'#2378A9', 'size':14})
+        output_sheet.write(0, 0, f'Valuation of {name} on {datetime.date.today()}',title_format)
+        
+        # Add Excel number formats to workbook
+        number_format  = workbook.add_format({'num_format': '#,##0'})
+        percent_format = workbook.add_format({'num_format': '0.00%'})
+        dollar_format  = workbook.add_format({'num_format': '$#,##0.00'})
+        bold_format    = workbook.add_format({'bold':True})
+
+        # Row formats
+        number_rows  = [2,4,5,6,8,10,11,14,16,17,18,19,20,21,22,23,24]
+        percent_rows = [1,3,7,9,12,13,27]
+        dollar_rows  = [25,26]
+
+        output_sheet.set_row(start_row, None, bold_format)
+        format_excel_rows(worksheet = output_sheet, row_indices = number_rows , cell_format = number_format , row_offset=start_row)
+        format_excel_rows(worksheet = output_sheet, row_indices = percent_rows, cell_format = percent_format, row_offset=start_row)
+        format_excel_rows(worksheet = output_sheet, row_indices = dollar_rows , cell_format = dollar_format , row_offset=start_row)
             
-            # Add Excel format types to workbook
-            number_format  = workbook.add_format({'num_format': '#,##0'})
-            percent_format = workbook.add_format({'num_format': '0.00%'})
-            dollar_format  = workbook.add_format({'num_format': '$#,##0.00'})
+        # Column widths
+        output_sheet.set_column('A:A',27)
+        output_sheet.set_column('B:B',16)
+        output_sheet.set_column('C:C',6)
+        output_sheet.set_column('D:M',14)
+        output_sheet.set_column('N:N',6)
+        output_sheet.set_column('O:O',16)
+        output_sheet.set_column('P:P',23,bold_format)
 
-            # Set row formats for DCF sheet
-            number_rows  = [2,4,5,6,8,10,11,14]
-            percent_rows = [1,3,7,9,12,13]
-            format_excel_rows(worksheet = dcf_sheet, row_indices = number_rows , cell_format = number_format)
-            format_excel_rows(worksheet = dcf_sheet, row_indices = percent_rows, cell_format = percent_format)
+        # Freeze panes
+        output_sheet.freeze_panes(4,1)
             
-            # Set row formats for Final Value sheet
-            number_rows  = [2,4,5,6,8,10,11,14,16,17,18,19,20,21,22,23,24]
-            percent_rows = [1,3,7,9,12,13,27]
-            dollar_rows  = [25,26]
-            format_excel_rows(worksheet = final_value_sheet, row_indices = number_rows , cell_format = number_format)
-            format_excel_rows(worksheet = final_value_sheet, row_indices = percent_rows, cell_format = percent_format)
-            format_excel_rows(worksheet = final_value_sheet, row_indices = dollar_rows , cell_format = dollar_format)
-            
-            # Set column formats for DCF sheet
-            dcf_sheet.set_column('A:A',27)
-            dcf_sheet.set_column('B:B',16)
-            dcf_sheet.set_column('C:L',14)
-            dcf_sheet.set_column('M:M',20)
-            
-            # Set column formats for Final Value sheet
-            final_value_sheet.set_column('A:A',27)
-            final_value_sheet.set_column('B:B',20)
-            
-    return
+def main():
+    result_list = []
+    for ticker in ticker_list:
+        Company = Company_Info(ticker)
+        Company.prepare_market_data(tax=0.24)
+        Company.auto_generate_dcf_assumptions()
+        Company.gather_dcf_data()
+        Company.set_manual_dcf_data(prior_NOL=0)
+        print(Company.model_inputs)
+        symbol, name, dcf_output, final_output = valuation_model(Company.model_inputs)
+        result_list.append((symbol, name, dcf_output, final_output))
 
+    with pd.ExcelWriter('DCF valuations.xlsx', date_format='YYYY-MM-DD') as writer:
+        export_dcf(writer=writer, tuple_list=result_list)
+    
 
-FIVN = Company_Info(ticker_list[0])
-import pprint as pp
-#pp.pprint(FIVN.__dict__)
-FIVN.prepare_market_data(tax=0.24)
-FIVN.auto_generate_dcf_assumptions()
-FIVN.gather_dcf_data()
-FIVN.set_manual_dcf_data(prior_NOL=0)
-
-
-print(FIVN.model_inputs)
-
-valuation_model(FIVN.model_inputs, write=True)
-
+main()
 
 def valuation_info(ticker):
     
