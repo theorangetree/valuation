@@ -24,7 +24,7 @@ pd.set_option('display.max_rows', 100)
 t0 = time.time()
 tp0 = time.process_time()
 
-ticker_list = ['FIVN'] # List of companies we want to value
+ticker_list = ['FIVN', 'ASAN', 'LPRO'] # List of companies we want to value
 
 # This asyncio function returns a dictionary with nested dictionaries for each ticker:
     # {*ticker*: {*webpage or financial statement*: {key: value}}}
@@ -424,6 +424,7 @@ class Company_Info:
         self.model_inputs['base_margin']        = self.income_statement['operatingMargin']
         self.model_inputs['debt']               = self.quote_summary['totalDebt']
         self.model_inputs['cash']               = self.quote_summary['totalCash']
+        self.model_inputs['market_cap']         = self.quote_summary['marketCap']
         self.model_inputs['shares_outstanding'] = self.quote_summary['sharesOutstanding']
         self.model_inputs['current_price']      = self.quote_summary['regularMarketPrice']
 
@@ -615,7 +616,8 @@ def valuation_model(model_inputs: dict, terminal_year = 11):
     name   = model_inputs['name']
 
     dcf_output = dcf.transpose()
-
+    dcf_output.iat[-1, -1] = pv_terminal_value
+    
     final_dict = {'PV (DCF Cash Flows)'    : pv_before_terminal,
                   'PV (Terminal Value)'    : pv_terminal_value,
                   'Total Present Value'    : total_pv,
@@ -624,6 +626,7 @@ def valuation_model(model_inputs: dict, terminal_year = 11):
                   '+ Cash'                 : cash,
                   '+ Non Operating Assets' : non_operating_assets,
                   'Value of Equity'        : equity_value,
+                  'Market Capitalization'  : model_inputs['market_cap'],
                   'Shares Outstanding'     : shares_outstanding,
                   'Value per Share'        : value_per_share,
                   'Current Stock Price'    : current_price,
@@ -632,10 +635,10 @@ def valuation_model(model_inputs: dict, terminal_year = 11):
     final_output = pd.DataFrame.from_dict(final_dict, orient='index')
     final_output.columns = ['Final Valuation']
     
-    return ticker, name, dcf_output, final_output
+    return ticker, name, dcf_output, final_output, value_to_price
 
 def export_dcf(writer, tuple_list): # [(ticker, name, dcf_output, final_output)]
-    for ticker, name, dcf_output, final_output in tuple_list:
+    for ticker, name, dcf_output, final_output, ratio in tuple_list:
         dcf_output.insert(11,'',np.nan,allow_duplicates=True)
         dcf_output.insert(1 ,'',np.nan,allow_duplicates=True)
         dcf_output.index.set_names('Year Ended', inplace=True)
@@ -697,16 +700,22 @@ def export_dcf(writer, tuple_list): # [(ticker, name, dcf_output, final_output)]
         blue_col     = list(range(4, dcf_width-2))
         right_col    = [12]
 
-
-        
         # Add index formats
         index_format      = workbook.add_format({'bg_color':'#C9C9CB', 'border':1})
-        index_bold_format = workbook.add_format({'bg_color':'#C9C9CB', 'border':1, 'bottom':2, 'bold':True})
+        index_bold_format = workbook.add_format({'bg_color':'#C9C9CB', 'border':1, 'bold':True, 'bottom':2})
+        index_dark_grey   = workbook.add_format({'bg_color':'#77777D', 'border':1, 'bold':True, 'color':'#FFFFFF'})
+        final_format_order = [index_format]*2 + [index_bold_format] + [index_format]*4 + [index_bold_format] + [index_format]*2 + [index_dark_grey]*3
+
         for index, value in enumerate(dcf_output.index):
             if index+1 in bold_rows:
-                output_sheet.write(start_row + index + 1, start_col, value, index_bold_format)
+                cell_format = index_bold_format
             else:
-                output_sheet.write(start_row + index + 1, start_col, value, index_format)
+                cell_format = index_format
+            output_sheet.write(start_row + index + 1, start_col, value, cell_format)
+
+        for index, value in enumerate(final_output.index):
+            cell_format = final_format_order[index]
+            output_sheet.write(start_row + dcf_height + index + 3, start_col, value, cell_format)
 
         # Create lists denoting desired formatting across columns and rows
         col_order = ['orange'] + ['blank'] + ['left'] + ['blue']*(dcf_width-6) + ['right'] + ['blank'] + ['orange']
@@ -716,25 +725,8 @@ def export_dcf(writer, tuple_list): # [(ticker, name, dcf_output, final_output)]
             row_order[percent-1] = 'percent'
             row_order[bold-1]    = 'bold'
             row_order[number-1]  = 'number'
-        print(col_order)
-        print(row_order)
+        final_row_order = ['number']*2 + ['bold'] + ['number']*4 + ['bold'] + ['number']*2 + ['final_dollar']*2 + ['final_percent']
         
-        """
-        # Add row formats (percentage)
-        orange_percent = workbook.add_format({'num_format':'0.00%', 'bg_color':'#FFE9CA', 'border':1, 'align':'center'})
-        blue_percent   = workbook.add_format({'num_format':'0.00%', 'bg_color':'#E3F1F9', 'border':1, 'align':'center'})
-        for index, value in enumerate(dcf_output.iloc[0,:]):
-            if index+1 in orange_col:
-                cell_format = orange_percent
-            elif index+1 in blank_col:
-                cell_format = blank_format
-            else:
-                cell_format = blue_percent
-            try:
-                output_sheet.write(start_row + 1, index + 1, value, cell_format)
-            except:
-                output_sheet.write(start_row + 1, index + 1, '', cell_format)
-        """
         # Add column formats (orange)
         orange_percent = workbook.add_format({'num_format':'0.00%', 'bg_color':'#FFE9CA', 'border':1, 'align':'center'})
         orange_number  = workbook.add_format({'num_format':'#,##0', 'bg_color':'#FFE9CA', 'border':1, 'align':'center'})
@@ -742,40 +734,38 @@ def export_dcf(writer, tuple_list): # [(ticker, name, dcf_output, final_output)]
         blue_percent   = workbook.add_format({'num_format':'0.00%', 'bg_color':'#E3F1F9', 'border':1, 'align':'center'})
         blue_number    = workbook.add_format({'num_format':'#,##0', 'bg_color':'#E3F1F9', 'border':1, 'align':'center'})
         blue_bold      = workbook.add_format({'num_format':'#,##0', 'bg_color':'#E3F1F9', 'border':1, 'align':'center', 'bottom':2, 'bold':True})
+        left_percent   = workbook.add_format({'num_format':'0.00%', 'bg_color':'#E3F1F9', 'border':1, 'align':'center'})
+        left_number    = workbook.add_format({'num_format':'#,##0', 'bg_color':'#E3F1F9', 'border':1, 'align':'center'})
+        left_bold      = workbook.add_format({'num_format':'#,##0', 'bg_color':'#E3F1F9', 'border':1, 'align':'center', 'bottom':2, 'bold':True})
+        right_percent  = workbook.add_format({'num_format':'0.00%', 'bg_color':'#E3F1F9', 'border':1, 'align':'center'})
+        right_number   = workbook.add_format({'num_format':'#,##0', 'bg_color':'#E3F1F9', 'border':1, 'align':'center'})
+        right_bold     = workbook.add_format({'num_format':'#,##0', 'bg_color':'#E3F1F9', 'border':1, 'align':'center', 'bottom':2, 'bold':True})
+        final_percent  = workbook.add_format({'num_format':'0.00%'    , 'bg_color':'#3188D7', 'border':1, 'align':'center', 'color':'#FFFFFF', 'bold':True})
+        final_dollar   = workbook.add_format({'num_format':'$#,##0.00', 'bg_color':'#3188D7', 'border':1, 'align':'center', 'color':'#FFFFFF', 'bold':True})
 
         # Dictionary of all necessary formats
         format_dictionary = {'orange':{'percent': orange_percent, 'number': orange_number, 'bold': orange_bold},
                              'left'  :{'percent': left_percent  , 'number': left_number  , 'bold': left_bold  },
                              'blue'  :{'percent': blue_percent  , 'number': blue_number  , 'bold': blue_bold  },
                              'right' :{'percent': right_percent , 'number': right_number , 'bold': right_bold }}
+        final_format_dict = {'number': orange_number, 'bold': orange_bold, 'final_dollar': final_dollar, 'final_percent': final_percent}
     
         for col_index, col_format in enumerate(col_order):
-            for row_index, row_format, value in enumerate(zip(row_order, dcf_output.iloc[:,col_index])):
-                if col_format == blank:
+            for row_index, (row_format, value) in enumerate(zip(row_order, dcf_output.iloc[:,col_index])):
+                if col_format == 'blank':
                     cell_format = blank_format
+                    value = None
                 else:
                     cell_format = format_dictionary[col_format][row_format]
-                    value = None
-
-                elif row_index + 1 in percent_rows:
-                    cell_format = orange_percent
-                elif row_index + 1 in number_rows:
-                    cell_format = orange_number
-                elif row_index + 1 in bold_rows:
-                    cell_format = orange_bold
                 try:
                     output_sheet.write(start_row + row_index + 1, start_col + col_index + 1, value, cell_format)
                 except:
                     output_sheet.write(start_row + row_index + 1, start_col + col_index + 1, '--' , cell_format)
-        """
-        # Base and terminal year columns
-        end_years_data = workbook.add_format({'bg_color':'#FFE9CA', 'border':1, 'align':'center'})
-        for index, value in enumerate(dcf_output.iloc[:,0]):
-            try:
-                output_sheet.write(start_row + index + 1, start_col + 1, value, end_years_data)
-            except:
-                output_sheet.write(start_row + index + 1, start_col + 1, '--', end_years_data)
-        """
+
+        for row_index, (row_format, value) in enumerate(zip(final_row_order, final_output.iloc[:,0])):
+            cell_format = final_format_dict[row_format]
+            output_sheet.write(start_row + dcf_height + row_index + 3, start_col + 1, value, cell_format)
+        
         # Add Excel number formats to workbook
         number_format  = workbook.add_format({'num_format': '#,##0'})
         percent_format = workbook.add_format({'num_format': '0.00%'})
@@ -802,9 +792,24 @@ def export_dcf(writer, tuple_list): # [(ticker, name, dcf_output, final_output)]
         output_sheet.set_column('O:O',16)
         output_sheet.set_column('P:P',23,bold_format)
 
+        # Assign tab color based on value-to-price ratio
+        lower_bound = 1/3
+        upper_bound = 3
+        
+        if ratio <= 1:
+            zero_to_one_scale = max(0, 0.5 * (1 + 1/(lower_bound - 1))  +  ratio / (2*(1 - lower_bound))) # ratio == lower_bound returns 0
+        else:                                                                                             # ratio == 1           returns 0.5
+            zero_to_one_scale = min(1, 0.5 * (1 - 1/(upper_bound - 1))  +  ratio / (2*(upper_bound - 1))) # ratio == upper_bound returns 1
+
+        # Create color scale (red = low value ratio; yellow = 1:1 ratio; green = high value ratio)
+        red   = int(min(225, 450 - 450 * zero_to_one_scale))
+        green = int(min(225, 0   + 450 * zero_to_one_scale))
+        hex_code = f'#{red:02X}{green:02X}{0:02X}'
+        output_sheet.set_tab_color(hex_code)
+
         # Freeze panes and hide gridlines
         output_sheet.freeze_panes(4,1)
-        output_sheet.hide_gridlines(1)
+        output_sheet.hide_gridlines(2)
         
 def main():
     result_list = []
@@ -815,8 +820,8 @@ def main():
         Company.gather_dcf_data()
         Company.set_manual_dcf_data(prior_NOL=0)
         print(Company.model_inputs)
-        symbol, name, dcf_output, final_output = valuation_model(Company.model_inputs)
-        result_list.append((symbol, name, dcf_output, final_output))
+        symbol, name, dcf_output, final_output, ratio = valuation_model(Company.model_inputs)
+        result_list.append((symbol, name, dcf_output, final_output, ratio))
 
     with pd.ExcelWriter('DCF valuations.xlsx', date_format='YYYY-MM-DD') as writer:
         export_dcf(writer=writer, tuple_list=result_list)
