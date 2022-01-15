@@ -24,7 +24,7 @@ pd.set_option('display.max_rows', 100)
 t0 = time.time()
 tp0 = time.process_time()
 
-ticker_list = ['FIVN'] # List of companies we want to value
+ticker_list = ['FIVN', 'ASAN', 'LPRO'] # List of companies we want to value
 
 # This asyncio function returns a dictionary with nested dictionaries for each ticker:
     # {*ticker*: {*webpage or financial statement*: {key: value}}}
@@ -655,28 +655,35 @@ def export_dcf(writer, tuple_list): # [(ticker, name, dcf_output, final_output)]
         # Identify format orders for columns and row
         dcf_col_order   = ['orange', 'blank', 'left'] + ['blue']*(dcf_width-6) + ['right', 'blank', 'orange']
         dcf_row_order   = ['percent', 'bold']*2 + ['number']*2 + ['percent', 'bold', 'percent', 'number', 'bold'] + ['percent']*2 + ['bold']
-        final_row_order = ['number']*2 + ['bold'] + ['number']*4 + ['bold'] + ['number']*2 + ['final_dollar']*2 + ['final_percent']
+        final_row_order = ['number']*2 + ['bold'] + ['number']*4 + ['bold'] + ['number']*2 + ['final_dollar_top', 'final_dollar_mid', 'final_percent']
 
         # Write columns headers
-        orange_header      = workbook.add_format({'bold':True, 'bg_color':'#F58F00','align':'center','border':1,'num_format':'YYYY-MM-DD'})
-        blue_header        = workbook.add_format({'num_format':'YYYY-MM-DD','bold':True,'color':'#FFFFFF','bg_color':'#2066A6','align':'center','border':1})
+        orange_header      = workbook.add_format({'num_format':'YYYY-MM-DD', 'bold':True, 'bg_color':'#F58F00', 'align':'center', 'border':1,})
+        orange_header_top  = workbook.add_format({'num_format':'YYYY-MM-DD', 'bold':True, 'bg_color':'#F58F00', 'align':'center', 'border':1, 'bottom_color':'white'})
+        orange_header_bot  = workbook.add_format({'num_format':'YYYY-MM-DD', 'bold':True, 'bg_color':'#F58F00', 'align':'center', 'border':1, 'top_color':'white'})        
+        blue_header        = workbook.add_format({'num_format':'YYYY-MM-DD', 'bold':True, 'bg_color':'#2066A6', 'align':'center', 'border':1, 'color':'#FFFFFF', 'left_color' :'#FFFFFF', 'right_color':'#FFFFFF'})
+        blue_header_left   = workbook.add_format({'num_format':'YYYY-MM-DD', 'bold':True, 'bg_color':'#2066A6', 'align':'center', 'border':1, 'color':'#FFFFFF', 'right_color':'#FFFFFF'})
+        blue_header_right  = workbook.add_format({'num_format':'YYYY-MM-DD', 'bold':True, 'bg_color':'#2066A6', 'align':'center', 'border':1, 'color':'#FFFFFF', 'left_color' :'#FFFFFF'})
         blank_format       = workbook.add_format({})
-        header_format_dict = {'orange': orange_header, 'blank': blank_format, 'blue': blue_header, 'left': blue_header, 'right': blue_header}
+        header_format_dict = {'orange': orange_header_bot, 'blank': blank_format, 'blue': blue_header, 'left': blue_header_left, 'right': blue_header_right}
 
-        output_sheet.write(start_row    , start_col            , 'Year Ended'   , blue_header)
-        output_sheet.write(start_row - 1, start_col + 1        , 'Base Year'    , orange_header)
-        output_sheet.write(start_row - 1, start_col + dcf_width, 'Terminal Year', orange_header)
+        output_sheet.write(start_row                 , start_col            , 'Year Ended'     , blue_header)
+        output_sheet.write(start_row - 1             , start_col + 1        , 'Base Year'      , orange_header_top)
+        output_sheet.write(start_row - 1             , start_col + dcf_width, 'Terminal Year'  , orange_header_top)
+        output_sheet.write(start_row + dcf_height + 2, start_col + 1        , 'Final Valuation', orange_header)
         
         for col_index, value in enumerate(dcf_output.columns):
             cell_format = header_format_dict[dcf_col_order[col_index]]
             output_sheet.write(start_row, start_col + col_index + 1, value, cell_format)
         
         # Write indices
-        index_format      = workbook.add_format({'bg_color':'#C9C9CB', 'border':1})
-        index_bold_format = workbook.add_format({'bg_color':'#C9C9CB', 'border':1, 'bold':True, 'bottom':2})
-        index_dark_grey   = workbook.add_format({'bg_color':'#77777D', 'border':1, 'bold':True, 'color':'#FFFFFF'})
+        index_format        = workbook.add_format({'bg_color':'#C9C9CB', 'left':1, 'right':1, 'bottom':1, 'left_color':'#000000', 'right_color':'#000000', 'bottom_color':'#FFFFFF'})
+        index_bold_format   = workbook.add_format({'bg_color':'#C9C9CB', 'left':1, 'right':1, 'bottom':1, 'left_color':'#000000', 'right_color':'#000000', 'bottom_color':'#000000', 'bold':True})
+        index_dark_grey_top = workbook.add_format({'bg_color':'#77777D', 'border':1, 'bold':True, 'color':'#FFFFFF', 'bottom_color':'#FFFFFF'})
+        index_dark_grey_mid = workbook.add_format({'bg_color':'#77777D', 'border':1, 'bold':True, 'color':'#FFFFFF', 'bottom_color':'#FFFFFF', 'top_color':'#FFFFFF'})
+        index_dark_grey_bot = workbook.add_format({'bg_color':'#77777D', 'border':1, 'bold':True, 'color':'#FFFFFF', 'top_color':'#FFFFFF'})
         index_format_dict = {'number': index_format, 'bold': index_bold_format, 'percent': index_format}
-        final_index_dict  = {'number': index_format, 'bold': index_bold_format, 'final_dollar': index_dark_grey, 'final_percent': index_dark_grey}
+        final_index_dict  = {'number': index_format, 'bold': index_bold_format, 'final_dollar_top': index_dark_grey_top, 'final_dollar_mid': index_dark_grey_mid, 'final_percent': index_dark_grey_bot}
 
         for row_index, value in enumerate(dcf_output.index):
             cell_format = index_format_dict[dcf_row_order[row_index]]
@@ -687,27 +694,28 @@ def export_dcf(writer, tuple_list): # [(ticker, name, dcf_output, final_output)]
             output_sheet.write(start_row + dcf_height + row_index + 3, start_col, value, cell_format)
 
         # Data frame cell formats
-        orange_percent = workbook.add_format({'num_format':'0.00%', 'bg_color':'#FFE9CA', 'border':1, 'align':'center'})
-        orange_number  = workbook.add_format({'num_format':'#,##0', 'bg_color':'#FFE9CA', 'border':1, 'align':'center'})
-        orange_bold    = workbook.add_format({'num_format':'#,##0', 'bg_color':'#FFE9CA', 'border':1, 'align':'center', 'bottom':2, 'bold':True})
-        blue_percent   = workbook.add_format({'num_format':'0.00%', 'bg_color':'#E3F1F9', 'border':1, 'align':'center'})
-        blue_number    = workbook.add_format({'num_format':'#,##0', 'bg_color':'#E3F1F9', 'border':1, 'align':'center'})
-        blue_bold      = workbook.add_format({'num_format':'#,##0', 'bg_color':'#E3F1F9', 'border':1, 'align':'center', 'bottom':2, 'bold':True})
-        left_percent   = workbook.add_format({'num_format':'0.00%', 'bg_color':'#E3F1F9', 'border':1, 'align':'center'})
-        left_number    = workbook.add_format({'num_format':'#,##0', 'bg_color':'#E3F1F9', 'border':1, 'align':'center'})
-        left_bold      = workbook.add_format({'num_format':'#,##0', 'bg_color':'#E3F1F9', 'border':1, 'align':'center', 'bottom':2, 'bold':True})
-        right_percent  = workbook.add_format({'num_format':'0.00%', 'bg_color':'#E3F1F9', 'border':1, 'align':'center'})
-        right_number   = workbook.add_format({'num_format':'#,##0', 'bg_color':'#E3F1F9', 'border':1, 'align':'center'})
-        right_bold     = workbook.add_format({'num_format':'#,##0', 'bg_color':'#E3F1F9', 'border':1, 'align':'center', 'bottom':2, 'bold':True})
-        final_percent  = workbook.add_format({'num_format':'0.00%'    , 'bg_color':'#3188D7', 'border':1, 'align':'center', 'color':'#FFFFFF', 'bold':True})
-        final_dollar   = workbook.add_format({'num_format':'$#,##0.00', 'bg_color':'#3188D7', 'border':1, 'align':'center', 'color':'#FFFFFF', 'bold':True})
+        orange_percent = workbook.add_format({'num_format':'0.00%', 'bg_color':'#FFE9CA', 'align':'center', 'left':1, 'right':1, 'bottom':1, 'left_color':'#000000', 'right_color':'#000000', 'bottom_color':'#FFFFFF'})
+        orange_number  = workbook.add_format({'num_format':'#,##0', 'bg_color':'#FFE9CA', 'align':'center', 'left':1, 'right':1, 'bottom':1, 'left_color':'#000000', 'right_color':'#000000', 'bottom_color':'#FFFFFF'})
+        orange_bold    = workbook.add_format({'num_format':'#,##0', 'bg_color':'#FFE9CA', 'align':'center', 'left':1, 'right':1, 'bottom':1, 'left_color':'#000000', 'right_color':'#000000', 'bottom_color':'#000000', 'bold':True})
+        blue_percent   = workbook.add_format({'num_format':'0.00%', 'bg_color':'#E3F1F9', 'align':'center', 'left':1, 'right':1, 'bottom':1, 'left_color':'#FFFFFF', 'right_color':'#FFFFFF', 'bottom_color':'#FFFFFF'})
+        blue_number    = workbook.add_format({'num_format':'#,##0', 'bg_color':'#E3F1F9', 'align':'center', 'left':1, 'right':1, 'bottom':1, 'left_color':'#FFFFFF', 'right_color':'#FFFFFF', 'bottom_color':'#FFFFFF'})
+        blue_bold      = workbook.add_format({'num_format':'#,##0', 'bg_color':'#E3F1F9', 'align':'center', 'left':1, 'right':1, 'bottom':1, 'left_color':'#FFFFFF', 'right_color':'#FFFFFF', 'bottom_color':'#000000', 'bold':True})
+        left_percent   = workbook.add_format({'num_format':'0.00%', 'bg_color':'#E3F1F9', 'align':'center', 'left':1, 'right':1, 'bottom':1, 'left_color':'#000000', 'right_color':'#FFFFFF', 'bottom_color':'#FFFFFF'})
+        left_number    = workbook.add_format({'num_format':'#,##0', 'bg_color':'#E3F1F9', 'align':'center', 'left':1, 'right':1, 'bottom':1, 'left_color':'#000000', 'right_color':'#FFFFFF', 'bottom_color':'#FFFFFF'})
+        left_bold      = workbook.add_format({'num_format':'#,##0', 'bg_color':'#E3F1F9', 'align':'center', 'left':1, 'right':1, 'bottom':1, 'left_color':'#000000', 'right_color':'#FFFFFF', 'bottom_color':'#000000', 'bold':True})
+        right_percent  = workbook.add_format({'num_format':'0.00%', 'bg_color':'#E3F1F9', 'align':'center', 'left':1, 'right':1, 'bottom':1, 'left_color':'#FFFFFF', 'right_color':'#000000', 'bottom_color':'#FFFFFF'})
+        right_number   = workbook.add_format({'num_format':'#,##0', 'bg_color':'#E3F1F9', 'align':'center', 'left':1, 'right':1, 'bottom':1, 'left_color':'#FFFFFF', 'right_color':'#000000', 'bottom_color':'#FFFFFF'})
+        right_bold     = workbook.add_format({'num_format':'#,##0', 'bg_color':'#E3F1F9', 'align':'center', 'left':1, 'right':1, 'bottom':1, 'left_color':'#FFFFFF', 'right_color':'#000000', 'bottom_color':'#000000', 'bold':True})
+        final_dollar_top  = workbook.add_format({'num_format':'$#,##0.00', 'bg_color':'#3188D7', 'border':1, 'align':'center', 'color':'#FFFFFF', 'bold':True, 'bottom_color':'#FFFFFF'})
+        final_dollar_mid  = workbook.add_format({'num_format':'$#,##0.00', 'bg_color':'#3188D7', 'border':1, 'align':'center', 'color':'#FFFFFF', 'bold':True, 'bottom_color':'#FFFFFF', 'top_color':'#FFFFFF'})
+        final_percent     = workbook.add_format({'num_format':'0.00%'    , 'bg_color':'#3188D7', 'border':1, 'align':'center', 'color':'#FFFFFF', 'bold':True, 'top_color':'#FFFFFF'})
 
         # Dictionary of all data formats
         data_format_dict  = {'orange':{'percent': orange_percent, 'number': orange_number, 'bold': orange_bold},
                              'left'  :{'percent': left_percent  , 'number': left_number  , 'bold': left_bold  },
                              'blue'  :{'percent': blue_percent  , 'number': blue_number  , 'bold': blue_bold  },
                              'right' :{'percent': right_percent , 'number': right_number , 'bold': right_bold }}
-        final_format_dict = {'number': orange_number, 'bold': orange_bold, 'final_dollar': final_dollar, 'final_percent': final_percent}
+        final_format_dict = {'number': orange_number, 'bold': orange_bold, 'final_dollar_top': final_dollar_top, 'final_dollar_mid': final_dollar_mid, 'final_percent': final_percent}
 
         # Write data
         for col_index, col_format in enumerate(dcf_col_order):
