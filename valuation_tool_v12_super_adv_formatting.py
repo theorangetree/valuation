@@ -24,7 +24,7 @@ pd.set_option('display.max_rows', 100)
 t0 = time.time()
 tp0 = time.process_time()
 
-ticker_list = ['FIVN', 'ASAN', 'LPRO'] # List of companies we want to value
+ticker_list = ['ASAN','CRM','GOOG','WRBY'] # List of companies we want to value
 
 # This asyncio function returns a dictionary with nested dictionaries for each ticker:
     # {*ticker*: {*webpage or financial statement*: {key: value}}}
@@ -294,6 +294,7 @@ class Company_Info:
             d_e_ratio  = total_debt / market_cap
             debt_ratio = total_debt / (market_cap + total_debt)
             print(f'Market debt-to-equity ratio: {d_e_ratio}')
+            print(total_debt)
             
             ## Cost of debt ##
             if type(cod) == float:
@@ -302,8 +303,14 @@ class Company_Info:
                 print('Auto-calculating cost of debt... (I recommend manually inputing cost of debt from sec filings as estimates can be inaccurate)')
                 interest_expense   = -self.income_statement.loc['interestExpense']
                 operating_income   = self.income_statement.loc['operatingIncome']
+                if operating_income == 0:
+                    operating_income = 1
                 interest_coverage  = interest_expense / operating_income
-                effective_int_rate = interest_expense / total_debt
+                if total_debt == 0:
+                    effective_int_rate = 0
+                else:
+                    effective_int_rate = interest_expense / total_debt
+
                 print(f'Effective interest rate: {effective_int_rate}')
 
                 credit_rating_df = pd.read_csv('synthetic_credit_rating.csv') # File needs to be manually updated (albeit very infrequently) using Damodaran's info (e.g. template models)
@@ -706,9 +713,9 @@ def export_dcf(writer, tuple_list): # [(ticker, name, dcf_output, final_output)]
         right_percent  = workbook.add_format({'num_format':'0.00%', 'bg_color':'#E3F1F9', 'align':'center', 'left':1, 'right':1, 'bottom':1, 'left_color':'#FFFFFF', 'right_color':'#000000', 'bottom_color':'#FFFFFF'})
         right_number   = workbook.add_format({'num_format':'#,##0', 'bg_color':'#E3F1F9', 'align':'center', 'left':1, 'right':1, 'bottom':1, 'left_color':'#FFFFFF', 'right_color':'#000000', 'bottom_color':'#FFFFFF'})
         right_bold     = workbook.add_format({'num_format':'#,##0', 'bg_color':'#E3F1F9', 'align':'center', 'left':1, 'right':1, 'bottom':1, 'left_color':'#FFFFFF', 'right_color':'#000000', 'bottom_color':'#000000', 'bold':True})
-        final_dollar_top  = workbook.add_format({'num_format':'$#,##0.00', 'bg_color':'#3188D7', 'border':1, 'align':'center', 'color':'#FFFFFF', 'bold':True, 'bottom_color':'#FFFFFF'})
-        final_dollar_mid  = workbook.add_format({'num_format':'$#,##0.00', 'bg_color':'#3188D7', 'border':1, 'align':'center', 'color':'#FFFFFF', 'bold':True, 'bottom_color':'#FFFFFF', 'top_color':'#FFFFFF'})
-        final_percent     = workbook.add_format({'num_format':'0.00%'    , 'bg_color':'#3188D7', 'border':1, 'align':'center', 'color':'#FFFFFF', 'bold':True, 'top_color':'#FFFFFF'})
+        final_dollar_top = workbook.add_format({'num_format':'$#,##0.00', 'bg_color':'#3188D7', 'border':1, 'align':'center', 'color':'#FFFFFF', 'bold':True, 'bottom_color':'#FFFFFF'})
+        final_dollar_mid = workbook.add_format({'num_format':'$#,##0.00', 'bg_color':'#3188D7', 'border':1, 'align':'center', 'color':'#FFFFFF', 'bold':True, 'bottom_color':'#FFFFFF', 'top_color':'#FFFFFF'})
+        final_percent    = workbook.add_format({'num_format':'0.00%'    , 'bg_color':'#3188D7', 'border':1, 'align':'center', 'color':'#FFFFFF', 'bold':True, 'top_color':'#FFFFFF'})
 
         # Dictionary of all data formats
         data_format_dict  = {'orange':{'percent': orange_percent, 'number': orange_number, 'bold': orange_bold},
@@ -789,4 +796,3 @@ t1 = time.time()
 tp1 = time.process_time()
 
 print(f'Normal time: {np.round(t1-t0, 3)}s, Process time: {np.round(tp1-tp0, 3)}s')
-

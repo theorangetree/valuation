@@ -24,7 +24,7 @@ tp0 = time.process_time()
 # Get list of Russell 3000 stock tickers
 r3000 = Russell3000_Tickers()
 r3000.download()
-r3000.to_csv() # Export to csv for reference only
+#r3000.to_csv() # Export to csv (for reference only)
 tickers = r3000.to_list()
 
 # If scraping through Russell 3000 will take too long, 'tickers' can be set to S&P 500 instead
