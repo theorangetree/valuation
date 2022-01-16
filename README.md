@@ -30,7 +30,7 @@ The data is exported to `DCF_valuations.xlxs', which is a formatted Excel file w
 ![Process Diagram](/README_images/valuation_tool_process_diagram.png)
 
 ## Sample Excel Output
-![Excel Output](/README_images/sample_excel_output.png)
+![Excel Output](/README_images/sample_excel_output.PNG)
 
 ### Output Interpretation
 The value to price ratio determines whether the model believes a stock is overpriced or undervalued (NOT financial advice).
