@@ -27,13 +27,14 @@ The `valuation_tool.py` script constructs a DCF model for one or multiple specif
 The data is exported to `DCF_valuations.xlxs', which is a formatted Excel file with one stock and DCF model per worksheet.
 
 ## Relationship between Python Scripts (Process Diagrams)
-#### Yahoo Finance Market Data Scraper
+### Yahoo Finance Market Data Scraper
 ![Market Data Scraper](/README_images/process_diagram_script_1.png)
-#### Valuation Tool
+### Valuation Tool
 ![Valuation Tool](/README_images/process_diagram_script_2.png)
-#### Legend
+### Legend(/README_images/legend.png)
+![Legend]
 ## Sample Excel Output
-![Excel Output](/README_images/sample_excel_output.png)
+![Excel Output](/README_images/excel_output.png)
 
 ### Output Interpretation
 The value to price ratio determines whether the model believes a stock is overpriced or undervalued (NOT financial advice).
@@ -74,7 +75,7 @@ Note that model assumptions and inputs can change and vary over the years in the
 
 #### Model inputs that are facts, not assumptions
 - Risk free rate (10-year U.S. treasury yield)
-- Latest quarterly financials date
+- Date of latest quarterly financials
 - Trailing 12-month revenue
 - Trailing 12-month operating margin
 - Total debt (interest bearing loans)
