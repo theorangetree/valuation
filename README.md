@@ -27,14 +27,14 @@ The `valuation_tool.py` script constructs a DCF model for one or multiple specif
 The data is exported to `DCF_valuations.xlxs', which is a formatted Excel file with one stock and DCF model per worksheet.
 
 ## Relationship between Python Scripts (Process Diagrams)
-### Yahoo Finance Market Data Scraper
-![Market Data Scraper](/README_images/process_diagram_script_1.png)
-### Valuation Tool
-![Valuation Tool](/README_images/process_diagram_script_2.png)
-### Legend(/README_images/legend.png)
-![Legend]
+### 1) Yahoo Finance Market Data Scraper
+<img alt="Market Data Scraper" src="/README_images/process_diagram_script_1.png" width="460"> <img alt="Legend" src="/README_images/legend.png" width="250">
+
+### 2) DCF Valuation Tool
+<img alt="Valuation Tool" src="/README_images/process_diagram_script_2.png">
+
 ## Sample Excel Output
-![Excel Output](/README_images/excel_output.png)
+<img alt="Excel Output" src="/README_images/excel_output.png">
 
 ### Output Interpretation
 The value to price ratio determines whether the model believes a stock is overpriced or undervalued (NOT financial advice).
@@ -68,7 +68,7 @@ Note that model assumptions and inputs can change and vary over the years in the
 | ---------------------------------------- | ------------- |
 | Number of high-growth years              | 5             |
 | Number of DCF years before terminal year | 10            |
-| Marginal tax rate                        | 24% (halfway between current and proposed corporate tax rate)|
+| Marginal tax rate                        | 24%           |
 | Current net operating loss carryover     | 0             |
 | Value of non-operating assets            | 0             |
 | Value of minority interests              | 0             |
