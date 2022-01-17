@@ -1,47 +1,55 @@
-# market_data(ticker_list) function scrapes all relevant data for Russell 3000 stocks from Yahoo Finances
+""" Asynchronously scrape all relevant data for Russell 3000 stocks from Yahoo Finances
+
+Main function:
+market_data(ticker_list) -- Scrape all stock data and output three CSV files:
     # 'market_data.csv' : stock data
     # 'status_cods.csv' : status code request errors (not 200)
     # 'errors.csv'      : python exceptions
 
-# This script is meant to be run as __main__, not imported
-# Typical runtime is around 2.5 hours
+This script is meant to be run as __main__, not imported
+Runtime is around 2.5 hours
 
-import asyncio
-import aiohttp  # concurrent version of 'requests' module
-import numpy as np
-import pandas as pd
-import json
+Other functions:
+    get_html()       -- Return html text for single url
+    scrape_tickers() -- Call get_html() on all tickers and return list of html texts
+    parse_json()     -- Convert html text to json string
+"""
 import re
 import time
 import datetime
 import random
+import json
 import csv
-from russell3000_tickers_vF import Russell3000_Tickers # Class with methods .download(), .to_list() and .to_csv()
+import asyncio
+import aiohttp  # concurrent version of 'requests' module
+import numpy as np
+import pandas as pd
+from russell3000_tickers import Russell3000Tickers # Class with methods .download(), .to_list() and .to_csv()
 
 t0 = time.time()
 tp0 = time.process_time()
 
+# Set display options to show more rows and columns than default
+pd.set_option('display.max_columns', 50)
+pd.set_option('display.max_rows', 200)
+
 # Get list of Russell 3000 stock tickers
-r3000 = Russell3000_Tickers()
+r3000 = Russell3000Tickers()
 r3000.download()
-#r3000.to_csv() # Export to csv (for reference only)
 tickers = r3000.to_list()
+#r3000.to_csv() # Uncomment to export to csv (for reference only)
 
 # If scraping through Russell 3000 will take too long, 'tickers' can be set to S&P 500 instead
 # import yahoo_fin.stock_info as si
 # tickers = si.tickers_sp500()
 print(f'Number of tickers: {len(tickers)}')
 
-# Set display options to show more rows and columns
-pd.set_option('display.max_columns', 50)
-pd.set_option('display.max_rows', 200)
-
-quote_summary_url = 'https://finance.yahoo.com/quote/{}'
+# Status codes and errors/exceptions to be exported
 status_codes = {}
 errors = []
 
 async def get_html(session, url):
-    # Web scrape and return html text
+    """Web scrape and return html text; also check request status code"""
     async with session.get(url, ssl=False) as resp:
         if resp.status != 200:
             status_codes[url] = resp.status
@@ -56,11 +64,11 @@ async def get_html(session, url):
         return (url, html)
 
 async def scrape_tickers(session, url, ticker_list):
-    # Asynchronously loop through web requests and return data once completed
+    """Asynchronously loop through web requests and return data once completed"""
     html_list = []
     count = 0
 
-    print(f'begun scraping - asynchronous')
+    print('begun scraping - asynchronous')
     for ticker in ticker_list:
         url_html = await get_html(session, url.format(ticker))
         html_list.append(url_html)
@@ -73,7 +81,7 @@ async def scrape_tickers(session, url, ticker_list):
     return html_list
 
 def parse_json(html):
-    # Convert html into json
+    """Convert html into json"""
     try:
         json_str = html.split('root.App.main =')[1].split('(this)')[0].split(';\n}')[0].strip()
     except Exception as e:
@@ -92,8 +100,12 @@ def parse_json(html):
         return json_info
 
 async def market_data(ticker_list):
-    # This function outputs a dictionary: key = stock ticker, value = dictionary containing relevant stock information
+    """Scrape all data and output a dictionary: key = stock ticker, value = dictionary of relevant stock information"""
+
     if __name__ == '__main__':
+        # Set Yahoo Finance urls
+        quote_summary_url = 'https://finance.yahoo.com/quote/{}'
+
         # Scrape data
         async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit=0)) as session:
             html_list_qs = await scrape_tickers(session, quote_summary_url, ticker_list)
@@ -102,9 +114,10 @@ async def market_data(ticker_list):
 
         # Alter this list to reflect stock information of interest
         json_info_keys = [('price','shortName'),('financialData','totalDebt'),('financialData','totalRevenue'),('financialData','totalCash'),
-                          ('financialData','debtToEquity'),('financialData','revenueGrowth'),('financialData','operatingMargins'),('defaultKeyStatistics','beta'),
-                          ('price','currency'),('price','regularMarketPrice'),('defaultKeyStatistics','sharesOutstanding'),('price','marketCap'),
-                          ('summaryProfile','industry'),('summaryProfile','sector'),('summaryProfile','country'),('summaryProfile','longBusinessSummary')]
+                          ('financialData','debtToEquity'),('financialData','revenueGrowth'),('financialData','operatingMargins'),
+                          ('defaultKeyStatistics','beta'),('price','currency'),('price','regularMarketPrice'),
+                          ('defaultKeyStatistics','sharesOutstanding'),('price','marketCap'),('summaryProfile','industry'),
+                          ('summaryProfile','sector'),('summaryProfile','country'),('summaryProfile','longBusinessSummary')]
         for url, html in html_list_qs:
             try:
                 json_info = parse_json(html)
@@ -125,7 +138,7 @@ async def market_data(ticker_list):
         output_df.rename_axis([f'{datetime.date.today()}'], inplace=True) # Set index header as today's date
         output_df.to_csv('market_data.csv')
         print(f'Wrote data to \'market_data.csv\' for {output_df.index.size} tickers')
-        
+
         # Export status codes of web request errors
         pd.DataFrame().from_dict(status_codes, orient='index').to_csv('status_codes.csv')
 
@@ -135,9 +148,6 @@ async def market_data(ticker_list):
             writer.writerows(errors)
 
         return output_df
-    
-    else:
-        return None
 
 asyncio.run(market_data(tickers))
 

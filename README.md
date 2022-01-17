@@ -5,14 +5,14 @@ Made this for fun! Please do not consider this tool to be financial advice!
 Any individual stock is unique and cannot be accurately intrinsically valued using an automated tool. Furthermore, every publically-traded stock on the stock market has it's price for a reason. If the intrinsic valuation differs from the stock price, there's always a reason (and usually a good one too).
 
 ## About
-I wrote this code to help myself create fast, simple, bottoms-up DCF stock valuations. DCF stands for Discounted Cash Flow and is a methodology for valuing companies (or any other cash-generating asset) intrinsically, meaning the value is calculated 100% independently of actual market value.
+I wrote this code to help myself create fast, simple Discounted Cash Flow (DCF) stock valuations. The DCF methodology for valuing companies (or any other cash-generating asset) is based on financial fundamentals, meaning value is calculated 100% independently of actual market value.
 
-In the simplest terms, a DCF model contructs projection of cash flows in perpertuity, based on company revenue and profitability assumptions.
+In simple terms, a DCF model projects company cash flows in perpertuity, based on company revenue and profitability assumptions, and then evaluates those cash flows based on assumed risk.
 
 ## How to use
 There are two scripts that should be run:
-1. yf_market_data_scraper.py
-2. valuation_tool.py
+1. yf_market_data_scraper.py (every few months)
+2. valuation_tool.py (for each group of stock valuations)
 
 #### Script 1: Market Data Scraper (Setup)
 The `yf_market_data_scraper.py` script scrapes data from Yahoo Finance for every stock listed on [MSCI's Russell 3000 ETF](https://www.ishares.com/us/products/239714/ishares-russell-3000-etf), which contains around ~2,700 stock tickers as of January, 2022.
@@ -26,11 +26,14 @@ The `valuation_tool.py` script constructs a DCF model for one or multiple specif
 
 The data is exported to `DCF_valuations.xlxs', which is a formatted Excel file with one stock and DCF model per worksheet.
 
-## Valuation Tool Process Diagram
-![Process Diagram](/README_images/valuation_tool_process_diagram.png)
-
+## Relationship between Python Scripts (Process Diagrams)
+#### Yahoo Finance Market Data Scraper
+![Market Data Scraper](/README_images/process_diagram_script_1.png)
+#### Valuation Tool
+![Valuation Tool](/README_images/process_diagram_script_2.png)
+#### Legend
 ## Sample Excel Output
-![Excel Output](/README_images/sample_excel_output.PNG)
+![Excel Output](/README_images/sample_excel_output.png)
 
 ### Output Interpretation
 The value to price ratio determines whether the model believes a stock is overpriced or undervalued (NOT financial advice).
@@ -48,25 +51,28 @@ Overall, there's no right or wrong model; it's all about setting the assumptions
 ## Complete List of DCF Model Assumptions and Inputs
 Note that model assumptions and inputs can change and vary over the years in the model.
 #### Assumptions that can be manually input or automatically estimated (based on industry, sector and historical data)
-- Growth rate
-- Operating margin
-- Number of years to achieve target operating margin
-- Sales to capital ratio (i.e. revenue growth per dollar of capital invested)
-- Weighted-average cost of capital
-  - Cost of debt
-  - Cost of equity
-    - Equity risk premium
-- Mature company weighted-average cost of capital
+| Model Input                      | Automatic estimation primarily based on...                        |
+| -------------------------------- | ------------------------------------------------------- |
+| Growth rate                      | Company recent growth rates                             |
+| Target operating margin          | 75th percentile of industry and sector                  |
+| Years to achieve target margin   | Current margin compared to industry and sector          |
+| Sales-to-capital ratio           | Sector ratios and company ratios                        |
+| Weighted-average cost of capital | Calculated based on cost of debt and equity assumptions |
+| - Cost of debt                   | Interest to debt ratio and interest coverage ratio      |
+| - Cost of equity                 | Industry and sector betas                               |
+|   - Equity risk premium          | Market implied equity risk premium                      |
 
 #### Assumptions that require manual input
-- Number of high-growth years               (default=5)
-- Number of DCF years before terminal year  (default=10)
-- Marginal tax rate                         (default=24%)
-- Current net operating loss carryover      (default=0)
-- Value of non-operating assets             (default=0)
-- Value of minority interests               (default=0)
+| Model Input                              | Default value |
+| ---------------------------------------- | ------------- |
+| Number of high-growth years              | 5             |
+| Number of DCF years before terminal year | 10            |
+| Marginal tax rate                        | 24% (halfway between current and proposed corporate tax rate)|
+| Current net operating loss carryover     | 0             |
+| Value of non-operating assets            | 0             |
+| Value of minority interests              | 0             |
 
-#### Model inputs that are not assumptions
+#### Model inputs that are facts, not assumptions
 - Risk free rate (10-year U.S. treasury yield)
 - Latest quarterly financials date
 - Trailing 12-month revenue
@@ -75,5 +81,5 @@ Note that model assumptions and inputs can change and vary over the years in the
 - Cash, cash-equivalents and marketable short-term assets
 - Shares outstanding
 
-#### Acknowledgements
+### Acknowledgements
 This script is possible thanks to everything I have learnt from valuation legend Prof. Aswath Damodaran ([YouTube Channel](https://www.youtube.com/c/AswathDamodaranonValuation)) (Note: this was NOT made with the Prof's consultation). You can learn more about finance and valuation from his YouTube channel and website.

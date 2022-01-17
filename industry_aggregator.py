@@ -1,31 +1,46 @@
-# Main function:
-    # industry_aggregates(csv_path: str, ex_ticker='----', write=False)
+"""Calculate market data statistics (percentile and mean) by sector and industry
 
-# Purpose:
-    # Aggregate stock data by sector and industry from specified line-by-line market data csv file
-    # [Optional] Exclude specified ticker from aggregates
-    # [Optional] If write=True, outputs aggregates as csv file
+Main function:
+industry_aggregates() -- Clean market data and return Data Frames with percentile and mean statistics by sector and industry
+    # [Optional] Exclude specified ticker from aggregates (e.g. ticker of company being valued)
+    # [Optional] If write=True, also outputs statistics to CSV files
 
+Script is meant to be run AFTER calculated_fields.py
+
+Other functions:
+filter_companies()    -- Filter out companies from market data
+clean_industry_data() -- Recategorize company industries and sectors when sample size is low
+percentile()          -- Percentile function usable with Pandas groupby().agg()
+"""
 import pandas as pd
 
 def filter_companies(df, ex_ticker):
-    # [Optional ex_ticker argument] Exclude the valuation company ticker so that it is excluded from the averages
-    df = df[df.index != ex_ticker]
-
+    """Remove tickers and return filtered Data Frame:
+        # Remove non-U.S. companies
+        # Remove non-primary tickers for companies with multiple share classes and tickers
+        # Remove valuation company ticker <ex_ticker> so it is excluded from aggregate statistics
+    """
     # Filter for U.S. companies
     df = df[df.country == 'United States']
 
-    # Remove non-primary tickers for companies with multiple share classes and tickers
-    secondary_tickers = ['BATRK','FWONA','LSXMK','CENTA','DISCK','FOX','GOOG','LBRDA','LILAK','NWS','RUSHB','UA','VIAC','ZG'] # List needs to be manually updated
-    df = df[~df.index.isin(secondary_tickers)]
+    # Identify duplicate company names (with same revenue) and tickers to remove
+    dup_rows    = df      [df.duplicated      (subset=['shortName','totalRevenue'], keep=False  )].sort_values(by='regularMarketPrice')
+    dup_tickers = dup_rows[dup_rows.duplicated(subset=['shortName','totalRevenue'], keep='first')].index.to_list() # Keep ticker with  highest stock price
+
+    # Identify non-primary tickers missed by the duplicate filter
+    other_secondary_tickers = ['DISCK'] # List needs to be manually updated
+
+    # Remove tickers
+    tickers_to_remove = [ex_ticker] + dup_tickers + other_secondary_tickers
+    df = df[~df.index.isin(tickers_to_remove)]
 
     return df
 
 def clean_industry_data(df):
-    # This function replaces low sample-size industry and sector values with similar industries
+    """Replace low sample-size industry/sector values with similar industries in market data file"""
     # Combine similar sectors
     df = df.replace({'sector'  :{'Financial':'Financial Services'}})
-    
+
     # Combine similar industries
     df = df.replace({'industry':{r'.*Banks.*'               :'Banks',
                                  r'^Beverages.*'            :'Beverages',
@@ -37,7 +52,7 @@ def clean_industry_data(df):
                                  r'^Oil & Gas (?!Equipment & Services).*$':'Oil & Gas',
                                  }},
                     regex=True)
-    
+
     df = df.replace({'industry':{'Airports & Air Services'          :'Rental & Leasing Services',
                                  'Lumber & Wood Production'         :'Building Materials',
                                  'Aluminum'                         :'Industrial Metals & Mining',
@@ -62,34 +77,44 @@ def clean_industry_data(df):
     return df
 
 def percentile(n):
-    # Create percentile function usable with Pandas groupby().agg()
+    """Percentile function usable with Pandas groupby().agg()"""
     def percentile_(x):
         return x.quantile(n)
     percentile_.__name__ = 'percentile_{:2.0f}'.format(n*100)
     return percentile_
 
-def industry_aggregates(csv_path, ex_ticker='----', limited=True, write=False):
-    df = pd.read_csv(csv_path, index_col=0)
-    aggs_date = df.index.name
+def industry_aggregates(file_path, ex_ticker='----', limited=True, write=False):
+    """Clean market data and return Data Frames with percentile and mean statistics by sector and industry
 
+    Keyword arguments:
+    file_path -- file path to market data CSV file
+    ex_ticker -- exclude ticker from aggregate statistics (default placeholder '----')
+    limited   -- calculate only columns needed for valuation model (default True)
+    write     -- output statistics to CSV files
+
+    This function is meant to be run AFTER calculated_fields.py
+    """
+    # Load, filter and clean market data
+    df = pd.read_csv(file_path, index_col=0)
+    aggs_date = df.index.name
     df = filter_companies(df, ex_ticker=ex_ticker)
     df = clean_industry_data(df)
-    
-    if limited == True: # Only aggregate data needed for valuation
+
+    if limited is True: # Only aggregate data needed for valuation
         col_subset = ['sector','industry','revenueGrowth','operatingMargins']
-        if 'unleveredBeta' in df.columns:
+        if 'unleveredBeta' in df.columns: # Unlevered Beta column already calculated
             col_subset.append('unleveredBeta')
         else:
             print('Must run Company_Info().calculated_fields() method to calculate unlevered betas in market data')
 
         # Aggregate data
         df_agg_sector   = df.loc[:,col_subset].groupby('sector'  ).agg(['count', 'mean', percentile(0.25), 'median', percentile(0.75)])
-        df_agg_industry = df.loc[:,col_subset].groupby('industry').agg(['count', 'mean', percentile(0.25), 'median', percentile(0.75)])     
+        df_agg_industry = df.loc[:,col_subset].groupby('industry').agg(['count', 'mean', percentile(0.25), 'median', percentile(0.75)])
     else:
         df_agg_sector   = df.groupby('sector'  ).agg(['count', 'mean', percentile(0.25), 'median', percentile(0.75)])
         df_agg_industry = df.groupby('industry').agg(['count', 'mean', percentile(0.25), 'median', percentile(0.75)])
 
-    if 'investedCapital' in df.columns: # Requires Invested Capital column to be calculated first
+    if 'investedCapital' in df.columns: # Invested Capital column already calculated
         # Identify rows where both invested capital and revenue are available (i.e. not null)
         df['totalRevenueMask']    = df.totalRevenue   .mask(df.investedCapital.isnull())
         df['investedCapitalMask'] = df.investedCapital.mask(df.totalRevenue   .isnull())
@@ -107,14 +132,17 @@ def industry_aggregates(csv_path, ex_ticker='----', limited=True, write=False):
         df_agg_industry = df_agg_industry.join(industry_stc, rsuffix='_R')
     else:
         print('Must run Company_Info().calculated_fields() method for Invested Capital before aggregate sales-to-capital ratio can be calculated.')
-    
+
     # Record date
     df_agg_sector.index.name   = aggs_date
-    df_agg_industry.index.name = aggs_date   
+    df_agg_industry.index.name = aggs_date
 
     # Output sector and industry aggregates as csv files
-    if write == True:
+    if write is True:
         df_agg_sector.to_csv('sector_aggs.csv')
         df_agg_industry.to_csv('industry_aggs.csv')
-    
+
     return df_agg_sector, df_agg_industry, aggs_date
+
+# Uncomment to export market data aggregate statistics to CSV files
+#industry_aggregates(file_path='market_data.csv', limited=False, write=True)
