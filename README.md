@@ -28,7 +28,7 @@ The data is exported to `DCF_valuations.xlxs', which is a formatted Excel file w
 
 ## Relationship between Python Scripts (Process Diagrams)
 ### 1) Yahoo Finance Market Data Scraper
-<img alt="Market Data Scraper" src="/README_images/process_diagram_script_1.png" width="460"> <img alt="Legend" src="/README_images/legend.png" width="250">
+<img alt="Market Data Scraper" src="/README_images/process_diagram_script_1.png" width="460"> <img alt="Legend" src="/README_images/key.png" width="250">
 
 ### 2) DCF Valuation Tool
 <img alt="Valuation Tool" src="/README_images/process_diagram_script_2.png">
