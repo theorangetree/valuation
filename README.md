@@ -11,28 +11,28 @@ In simple terms, a DCF model projects company cash flows in perpertuity based on
 
 ## How to use
 There are two scripts that should be run:
-| Script name                  | Runtime (approx.)              | Frequency              |
-| ---------------------------- | ------------------------------ | ---------------------- |
-| 1) yf_market_data_scraper.py | 2.5 to 3 hours                 | Run every ~3 months    |
-| 2) valuation_tool.py         | 3 seconds (+1 per extra stock) | Run for each valuation |
+| Script name                        | Runtime (approx.)              | Frequency              |
+| ---------------------------------- | ------------------------------ | ---------------------- |
+| **1)** `yf_market_data_scraper.py` | 2.5 to 3 hours                 | Run every ~3 months    |
+| **2)** `valuation_tool.py`         | 3 seconds (+1 per extra stock) | Run for each valuation |
 
-#### Script 1: Market Data Scraper (Setup)
+#### Script 1) Yahoo Finance Market Data Scraper
 The `yf_market_data_scraper.py` script scrapes data from Yahoo Finance for every stock listed on [MSCI's Russell 3000 ETF](https://www.ishares.com/us/products/239714/ishares-russell-3000-etf), which contains around ~2,700 stock tickers as of January, 2022.
 
 Originally, the webscraping was performed synchronously (concurrently), however Yahoo Finance has a rate limit (exact limit unknown), after which data is returned blank or incorrect. Thus, the scraper is set to run synchronously and includes a ~1.5s delay, averaging to around one request every 3-3.5 seconds and totaling ~2.5 hours to complete the full market data scrape.
 
 The data is exported to `market_data.csv` with the first cell containing the effective date of the data.
 
-#### Script 2: Valuation Tool
+#### Script 2) DCF Valuation Tool
 The `valuation_tool.py` script constructs a DCF model for one or multiple specified stock tickers. To do this, it scrapes and gathers the necessary financial data and DCF model assumptions. Some model assumptions can be automatically estimated if a number is not manually provided. The other model assumptions require manual input, although they also have default values. See below for a list of DCF model assumptions and inputs.
 
-The data is exported to `DCF_valuations.xlxs', which is a formatted Excel file with one worksheet and DCF model per stock.
+The data is exported to `DCF_valuations.xlxs`, which is a formatted Excel file with one worksheet and DCF model per stock.
 
 ## Relationship between Main Scripts and Imported Local Modules (Process Flow)
-### 1) Yahoo Finance Market Data Scraper
+### Script 1) Yahoo Finance Market Data Scraper
 <img alt="Market Data Scraper" src="/README_images/process_diagram_script_1.png" width="480"> <img alt="Legend" src="/README_images/legend.png" width="240">
 
-### 2) DCF Valuation Tool
+### Script 2) DCF Valuation Tool
 <img alt="Valuation Tool" src="/README_images/process_diagram_script_2.png">
 
 ## Sample Excel Output
@@ -47,22 +47,20 @@ One first step is to review revenue assumptions by researching the total market 
 - In the U.S., pizza shops had total sales revenue of around $46bn in 2020
 - Let's say this is projected to grow at 5% CAGR over the next 10-years (i.e. $75bn in sales by 2030)
 - Let's say you estimate your pizza chain to achieve a best-case scenario of 33% market share in 10 years
-- If your year-10 revenue is above $25bn, it's a sign the revenue growth assumptions may be too high
+- If your 2030 model revenue is above $25bn (33% share), it's a sign the revenue growth assumptions may be too high
 
-#### Reviewing Assumptions Example 2: Reviewing Asana's Revenues
-Let's look at the real case of Asana, Inc., shown in the image above.
-- According to a recent study, the global task management software market was $2.4bn in 2020 and projected to reach $4.7bn by 2026 (~12% CAGR)
-  - The North America market was $578m in 2018 and projected to reach $1.4bn by 2026 (~12% CAGR)
-
-- By comparison, Asana's 12 month 2021-10-30 revenue is $335m, resulting in ~10-15% global market share
+#### Reviewing Assumptions Example 2: Asana Inc.'s Revenues
+Let's look at the real case of Asana, Inc. (task management software company) shown in the image above:
+- The global task management software market was $2.4bn in 2020 and projected to reach $4.7bn by 2026 (~12% CAGR)
+  - The North American market was $578m in 2018 and projected to reach $1.4bn by 2026 (~12% CAGR)
+- By comparison, Asana's 12-month 2021-10-30 revenue was $335m, resulting in ~10-15% global market share
   - Asana's revenue segmentation is 58% U.S. and 42% global, resulting in ~25-30% local market share
- 
-- The model estimates Asana's revenue to be over $3bn by 2026, which is projected to be over 60% global market share, which is clearly too high
-- This suggests the revenue growth assumptions are too generous, or that the market for Asana is actually much larger than being considered
-- Despite the current revenue growth assumptions, the model is estimating a Value-per-Share of $45.37, which is 25% lower than the Stock Price of $60.18
-- Before we can interpret this, the other assumptions need to be reviewed too (see full list of assumptions below)
+- The model estimates Asana's revenue to be over $3bn by 2026, which is projected to be over **60% global market share (too high)**
+- This suggests the revenue growth assumptions are too generous, or that Asana's market is actually larger than being considered
+- Despite the revenue growth assumptions, the model calculates a $45.37 Value-Per-Share, 25% lower than the $60.18 Stock Price
+- However, before we can interpret this, the other assumptions also need to be reviewed (*full list of assumptions below*)
 
-Overall, there's no right or wrong model; it's all about the assumptions. Remember, if the DCF model valuation differs from the market price, which it often will, there's usually a good reason that's being overlooked by the model.
+Overall, there's no right or wrong model; it's all about the assumptions. Remember, if the DCF valuation differs from the market price, which it often will, there's usually a good reason that's being overlooked by the model.
 
 ## Complete List of DCF Model Assumptions and Inputs
 #### Assumptions that can be manually inputted or automatically estimated:
@@ -96,6 +94,6 @@ Overall, there's no right or wrong model; it's all about the assumptions. Rememb
 - Cash, cash-equivalents and marketable short-term assets
 - Shares outstanding
 
-* *Note: some model assumptions and inputs will vary throughout the model* *
+*Note: some model assumptions and inputs will vary throughout the model*
 ### Acknowledgements
-This script is possible thanks to everything I have learnt from valuation legend Prof. Aswath Damodaran ([YouTube Channel](https://www.youtube.com/c/AswathDamodaranonValuation)) (Note: this was NOT made with the Prof's consultation). You can learn more about finance and valuation from his YouTube channel and website.
+This script is possible thanks to everything I have learnt from valuation legend Prof. Aswath Damodaran ([YouTube Channel](https://www.youtube.com/c/AswathDamodaranonValuation)) (*Note: this was NOT made with the Professor's consultation*). You can learn more about finance and valuation on his YouTube channel and website.
