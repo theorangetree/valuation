@@ -4,24 +4,18 @@
 
 Usage Guideline:
     # Update TICKER_LIST to contain a python list of tickers for companies you want to value
-    # Adjust assumptions by changing method arguments in main() function
+    # (Optional) Update ASSUMPTION_LIST by adding dictionaries to the list
     # Run script -> review Excel output -> adjust assumptions -> re-run script
     # If market data is older than 3 months, consider running yf_market_data_scraper.py to update it (runtime ~2.5hrs)
 
 Main function:
 main() -- Export an Excel workbook containing a DCF valuation in each worksheet per ticker in TICKER_LIST
 
-Class:
-CompanyInfo() -- Pull, calculate and store valuation information specific to one company
-              -- Build DCF valuation model using the information stored
-
-Main class methods in sequential order:
-.prepare_market_data()           -- Prepare market data by running .calculated_fields() and .get_market_aggs()
-.auto_generate_dcf_assumptions() -- Set or auto-estimate all model assumptions that can be auto-estimated
-.gather_dcf_data()               -- Gather all model inputs that are not assumptions (i.e. constant data)
-.set_manual_dcf_data()           -- Set model assumptions that cannot be auto-estimated
-.valuation_model()               -- Create DCF valuation model using the model inputs above
-# Outputs tuple containing: dcf (data frame), final valuation (data frame), ticker, name, value-to-price ratio, model inputs (dictionary)
+Class and main methods:
+CompanyInfo()               -- Store valuation-related data
+    .prepare_model_inputs() -- Generate model inputs and assumptions automatically or set based on arguments passed
+    .valuation_model()      -- Create DCF valuation model using the model inputs above
+Outputs tuple containing: dcf (data frame), final valuation (data frame), ticker, name, value-to-price ratio, model inputs (dictionary)
 
 Other class methods:
 .tax_rate()          -- Set tax rate assumption
@@ -56,7 +50,29 @@ pd.set_option('display.max_columns', 50)
 pd.set_option('display.max_rows', 100)
 
 # Identify the stock ticker/s of interest
-TICKER_LIST = ['ASAN','CRM','GOOG','WRBY'] # List of companies we want to value
+TICKER_LIST = ['ASAN','CRM','GOOG','WRBY'] # List of companies to value
+
+# USER-INPUT ASSUMPTIONS (OPTIONAL)
+# Use a list of dictionaries, where first dictionary contains assumptions for first ticker and so on...
+ASSUMPTIONS_LIST = [{}]
+
+""" Here areall available keyword arguments for the assumptions
+tax                  -- Marginal tax rate if the company is profitable
+terminal_year        -- Final year of model when the company is mature and growing on pace with the economy
+growth_years         -- Number of years of high growth without any decline in growth rate
+prior_NOL            -- Carry forward "Net Operating Loss" that can be used as future tax offset
+non_operating_assets -- Value of non-operating assets (non-cash assets with no impact on business operations)
+minority_interests   -- Value of minority interests in the company being valued, to be subtracted from valuation
+growth               -- High-growth period growth rate
+margin               -- Target operating income margin
+margin_years         -- Years until target operating income margin is achieved
+sales_to_capital     -- Future sales-to-capital ratio, i.e. growth in revenue dollars per dollar of capital invested
+wacc                 -- Weighted average cost of capital (i.e. average cost for company to raise capital)
+cod                  -- Cost of debt (i.e. rate demanded by lenders to lend money to the company)
+coe                  -- Cost of equity (i.e. return demanded by company shareholders for owning its stock)
+erp                  -- Equity risk premium (i.e. excess return over the risk-free rate investors want for owning equity)
+mature_wacc          -- Expected cost of capital for the average mature company
+"""
 
 # Concurrently scrape and return a dictionary with dictionaries for each ticker:
     # {*ticker*: {*webpage or financial statement*: {key: value}}}
@@ -114,7 +130,7 @@ def income_statement_trends(is_yearly):
     return trends_output
 
 class CompanyInfo:
-    """Pull, calculate and store valuation information specific to one company
+    """Pull, estimate and store valuation information specific to one company
     Uses information to create DCF valuation model
     """
     def __init__(self, ticker: str, market_data_path='market_data.csv'):
@@ -177,7 +193,7 @@ class CompanyInfo:
 
     ### Calculate DCF assumptions for growth, margins, sales-to-capital ratio, and cost of capital
 
-    def growth(self, manual=False, years=5): # years: int >= 1
+    def growth(self, manual=False):
         # High-growth rate
         if type(manual) == float or type(manual) == int: # Manual input
             self.model_inputs['growth_rate'] = manual
@@ -207,10 +223,7 @@ class CompanyInfo:
 
             self.model_inputs['growth_rate'] = np.average([self_growth, market_growth.loc['median']], weights=weights)
 
-        # Years of high-growth
-        self.model_inputs['growth_duration'] = years
-
-    def target_margin(self, manual=False, years=False, max_years=10): # years: int >= 1
+    def target_margin(self, manual=False, years=False, max_years=10):
         # Target operating income margin
         if type(manual) == float or type(manual) == int: # Manual input
             self.model_inputs['target_margin'] = manual
@@ -257,7 +270,7 @@ class CompanyInfo:
             try:
                 growth_duration = self.model_inputs['growth_duration']
             except KeyError:
-                print('Assuming growth_duration and baseline target_margin achievement of 5 years')
+                print('Recommend running .prepare_model_inputs() method first. Assuming growth_duration of 5 years')
                 growth_duration = 5
 
             years = growth_duration
@@ -433,23 +446,48 @@ class CompanyInfo:
         print(f'Mature WACC: {self.model_inputs["mature_wacc"]}')
 
     ### Prepare data for model
-    def prepare_market_data(self, tax=0.24): # Recommend marginal tax rate (i.e. corporate tax rate)
-        # Jan-2022 corporate tax rate is 21%, but there is a proposal in congress to increase this to 26.5%
-        # As a result, I am assuming a roughly in-between tax rate of 24%
-        self.tax_rate(tax=tax)
+    def prepare_model_inputs(self, tax=0.24,
+                             terminal_year=11, growth_years=5, prior_NOL=0, non_operating_assets=0, minority_interests=0,
+                             growth=False, margin=False, margin_years=False, sales_to_capital=False,
+                             wacc=False, cod=False, coe=False, erp=False, mature_wacc=False):
+        """ Run other class methods to set and/or automatically estimate model assumptions and inputs
+
+        Keyword arguments are optional and used to override default model assumptions:
+        tax                  -- Marginal tax rate if the company is profitable
+        terminal_year        -- Final year of model when the company is mature and growing on pace with the economy
+        growth_years         -- Number of years of high growth without any decline in growth rate
+        prior_NOL            -- Carry forward "Net Operating Loss" that can be used as future tax offset
+        non_operating_assets -- Value of non-operating assets (non-cash assets with no impact on business operations)
+        minority_interests   -- Value of minority interests in the company being valued, to be subtracted from valuation
+        growth               -- High-growth period growth rate
+        margin               -- Target operating income margin
+        margin_years         -- Years until target operating income margin is achieved
+        sales_to_capital     -- Future sales-to-capital ratio, i.e. growth in revenue dollars per dollar of capital invested
+        wacc                 -- Weighted average cost of capital (i.e. average cost for company to raise capital)
+        cod                  -- Cost of debt (i.e. rate demanded by lenders to lend money to the company)
+        coe                  -- Cost of equity (i.e. return demanded by company shareholders for owning its stock)
+        erp                  -- Equity risk premium (i.e. excess return over the risk-free rate investors want for owning equity)
+        mature_wacc          -- Expected cost of capital for the average mature company
+        """
+        # Set tax rate and prepare market data by sector and industry
+        self.tax_rate(tax=tax)   # default 24%
         self.calculated_fields()
         self.get_market_aggs()
 
-    def auto_generate_dcf_assumptions(self, growth=False, growth_years=5, margin=False, margin_years=False, sales_to_capital=False,
-                                      wacc=False, cod=False, coe=False, erp=False, mature_wacc=False):
-        # Auto-generate assumptions for growth, margins, sales-to-capital ratio, and cost of capital
-        self.growth          (manual = growth, years = growth_years)
-        self.target_margin   (manual = margin, years = margin_years)
+        # Set model assumptions that cannot be automatically estimated
+        self.model_inputs['terminal_year']        = terminal_year        # default 11
+        self.model_inputs['growth_duration']      = growth_years         # default 5
+        self.model_inputs['prior_NOL']            = prior_NOL            # default 0
+        self.model_inputs['non_operating_assets'] = non_operating_assets # default 0
+        self.model_inputs['minority_interests']   = minority_interests   # default 0
+
+        # Set or generate model assumptions that can be automatically estimated
+        self.growth          (manual = growth)
+        self.target_margin   (manual = margin, years = margin_years, max_years = terminal_year)
         self.sales_to_capital(manual = sales_to_capital)
         self.cost_of_capital (wacc = wacc, cod = cod, coe = coe, erp = erp, mature_wacc = mature_wacc)
 
-    def gather_dcf_data(self):
-        # Gather historical company data needed for DCF model
+        # Gather most recent company data needed for DCF model baseline year
         self.model_inputs['base_growth']        = self.quote_summary['revenueGrowth']
         self.model_inputs['base_revenue']       = self.income_statement['totalRevenue']
         self.model_inputs['base_margin']        = self.income_statement['operatingMargin']
@@ -457,11 +495,6 @@ class CompanyInfo:
         self.model_inputs['cash']               = self.quote_summary['totalCash']
         self.model_inputs['shares_outstanding'] = self.quote_summary['sharesOutstanding']
         self.model_inputs['current_price']      = self.quote_summary['regularMarketPrice']
-
-    def set_manual_dcf_data(self, prior_NOL = 0, non_operating_assets = 0, minority_interests = 0):
-        self.model_inputs['prior_NOL']            = prior_NOL
-        self.model_inputs['non_operating_assets'] = non_operating_assets
-        self.model_inputs['minority_interests']   = minority_interests
 
     def valuation_model(self, model_inputs = None, terminal_year = 11):
         # Discounted Cash Flow (DCF) valuation model to value a single stock
@@ -474,6 +507,7 @@ class CompanyInfo:
         dcf_dict = {}
 
         # Default is 12 time periods: i.e. Base Year + 10 Years + Terminal Year
+        terminal_year    = model_inputs['terminal_year']
         num_time_periods = terminal_year + 1
         # Create a list of dates containing the end date of each time period (year)
         year_ends = []
@@ -484,7 +518,7 @@ class CompanyInfo:
 
         # Add empty placeholder values for each DCF item
         dcf_items = ['Revenue Growth','Revenue','Operating Margin','Operating Income','Prior Net Operating Loss',
-                     'Taxable Operating Income','Tax Rate','After-Tax Operating Income','Sales to Capital',
+                     'Taxable Operating Income','Tax Rate','After-Tax Operating Income','Sales-to-Capital Ratio',
                      'Reinvestment','Free Cash Flow to Firm','Cost of Capital','Discount Factor','PV (Free Cash Flow to Firm)']
         for item in dcf_items:
             dcf_dict[item] = [0] * num_time_periods
@@ -563,14 +597,14 @@ class CompanyInfo:
         dcf['After-Tax Operating Income'] = dcf['Operating Income'] - (dcf['Taxable Operating Income'] * dcf['Tax Rate'])
 
         ### Create sales-to-capital ratio line
-        dcf['Sales to Capital'] = model_inputs['sales_to_capital']
+        dcf['Sales-to-Capital Ratio'] = model_inputs['sales_to_capital']
 
         ### Create reinvestment line
         # No inputs needed
         col_reinvestment = [0] # Base year
         # Calculate capital reinvestment amounts (needed for growth) through the terminal year
         for i in range(1, num_time_periods):
-            col_reinvestment.append((dcf['Revenue'][i] - dcf['Revenue'][i-1]) / dcf['Sales to Capital'][i])
+            col_reinvestment.append((dcf['Revenue'][i] - dcf['Revenue'][i-1]) / dcf['Sales-to-Capital Ratio'][i])
 
         dcf['Reinvestment'] = col_reinvestment
 
@@ -626,7 +660,7 @@ class CompanyInfo:
         shares_outstanding   = model_inputs['shares_outstanding']
         current_price        = model_inputs['current_price']
         # Calculate final estimated value
-        equity_value    = total_pv + cash - debt + non_operating_assets + minority_interests
+        equity_value    = total_pv + cash - debt + non_operating_assets - minority_interests
         value_per_share = equity_value / shares_outstanding
         value_to_price  = value_per_share / current_price
 
@@ -634,7 +668,7 @@ class CompanyInfo:
         print(f'Common shares outstanding = {shares_outstanding}')
         print(f'\nEstimated value per share = ${value_per_share:.2f}\n---')
         print(f'\nCurrent price per share = ${current_price:.2f}\n---')
-        print(f'\nPrice to value ratio: {value_to_price:.3f}\n---')
+        print(f'\nValue-to-price ratio: {value_to_price:.3f}\n---')
 
         ############# Output completed DCF and terminal value #############
 
@@ -666,13 +700,21 @@ def main():
     """Export an Excel workbook containing a DCF valuation in each worksheet per ticker in TICKER_LIST"""
     if __name__ == '__main__':
         result_list = []
-        for ticker in TICKER_LIST:
-            company = CompanyInfo(ticker)
-            company.prepare_market_data() # tax=0.24
-            company.auto_generate_dcf_assumptions() # growth=, growth_years=, margin=, margin_years=, sales_to_capital=, wacc=, cod=, coe=, erp=, mature_wacc=
-            company.gather_dcf_data()
-            company.set_manual_dcf_data() # prior_NOL=0, non_operating_assets=0, minority_interests=0
 
+        for index, ticker in enumerate(TICKER_LIST):
+            company = CompanyInfo(ticker)
+
+            # Check for user-inputted assumptions
+            assumptions = {}
+            try:
+                assumptions = ASSUMPTIONS_LIST[index]
+            except IndexError:
+                pass
+
+            # Set model assumptions and inputs
+            company.prepare_model_inputs(**assumptions)
+
+            # Run valuation model
             symbol, name, dcf_output, final_output, ratio, assumptions = company.valuation_model() # terminal_year=11
             result_list.append((symbol, name, dcf_output, final_output, ratio, assumptions))
 

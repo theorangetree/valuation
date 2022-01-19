@@ -2,31 +2,32 @@
 ### !! Disclaimer !!
 Made this for fun! Please do not consider this tool to be financial advice!
 
-Every stock is unique and cannot be accurately intrinsically valued using an automated tool. Furthermore, every publically-traded stock on the stock market has its price for a reason. If the intrinsic valuation differs from the stock price, there's always a reason (and usually a good one).
+Every stock is unique and cannot be accurately intrinsically valued using an automated tool. If the intrinsic valuation differs from the stock price, there's always a reason (and usually a good one).
 
 ## About
-I wrote this code to help me value companies using Discounted Cash Flow (DCF) models. The DCF methodology for valuing companies (or any cash-generating asset) is based on financial fundamentals, meaning value is calculated independently of the company's actual market value.
+The purpose of this tool is to create Discounted Cash Flow (DCF) valuation models. For instant use, this tool can export a DCF valuation model with automatically estimated assumptions. For customized use, you can select the model assumptions to mannually adjust (*see instructions*).
 
-In simple terms, a DCF model projects company cash flows in perpertuity based on company revenue and profitability assumptions, and then evaluates those cash flows based on assumed risk and time-value of money.
+What is a DCF valuation model? In simple terms, a DCF model forecasts company cash flows in perpertuity based on revenue and profitability assumptions, and then evaluates those cash flows based on assumed risk and time-value of money.
 
-## How to use
-There are two scripts that should be run:
-| Script name                        | Runtime (approx.)              | Frequency              |
-| ---------------------------------- | ------------------------------ | ---------------------- |
-| **1)** `yf_market_data_scraper.py` | 2.5 to 3 hours                 | Run every ~3 months    |
-| **2)** `valuation_tool.py`         | 3 seconds (+1 per extra stock) | Run for each valuation |
+## Usage instructions
+There are two scripts that can be run:
+| Script name                        | Runtime (approx.)               | Frequency              |
+| ---------------------------------- | ------------------------------- | ---------------------- |
+| **1)** `yf_market_data_scraper.py` | 2.5 to 3 hours (rate limited)   | Run every ~3 months    |
+| **2)** `valuation_tool.py`         | 3 seconds (+1s per extra stock) | Run for each valuation |
 
 #### Script 1) Yahoo Finance Market Data Scraper
-The `yf_market_data_scraper.py` script scrapes data from Yahoo Finance for every stock listed on [MSCI's Russell 3000 ETF](https://www.ishares.com/us/products/239714/ishares-russell-3000-etf), which contains around ~2,700 stock tickers as of January, 2022.
+`yf_market_data_scraper.py` scrapes data from Yahoo Finance for every company listed on [MSCI's Russell 3000 ETF](https://www.ishares.com/us/products/239714/ishares-russell-3000-etf), which contains around ~2,700 stock tickers as of January, 2022. The web scraping is done asynchronously with 1.5s extra delay between requests, because if Yahoo Finance's rate limit is exceeded, data is returned blank or incorrect.
 
-Originally, the webscraping was performed synchronously (concurrently), however Yahoo Finance has a rate limit (exact limit unknown), after which data is returned blank or incorrect. Thus, the scraper is set to run synchronously and includes a ~1.5s delay, averaging to around one request every 3-3.5 seconds and totaling ~2.5 hours to complete the full market data scrape.
-
-The data is exported to `market_data.csv` with the first cell containing the effective date of the data.
+The data is exported to `market_data.csv` with cell "A1" containing the effective date of the data.
 
 #### Script 2) DCF Valuation Tool
-The `valuation_tool.py` script constructs a DCF model for one or multiple specified stock tickers. To do this, it scrapes and gathers the necessary financial data and DCF model assumptions. Some model assumptions can be automatically estimated if a number is not manually provided. The other model assumptions require manual input, although they also have default values. See below for a list of DCF model assumptions and inputs.
+`valuation_tool.py` constructs a DCF model for each specified stock ticker. To do this, it web scrapes financial data and sets DCF model assumptions. Some model assumptions are automatically estimated if no input is given. The other model assumptions require manual input, although they also have default values.
 
-The data is exported to `DCF_valuations.xlxs`, which is a formatted Excel file with one worksheet and DCF model per stock.
+The data is exported to `DCF_valuations.xlxs`, which is a formatted Excel file with one DCF model per stock.
+
+##### Inputing Model Assumptions
+Assumptions can be individually adjusted in the script by passing arguments to the `.prepare_model_inputs()` method. This is done by adding to a dictionary in the `ASSUMPTIONS_LIST` variable. There are plans to make this a much more accessible process in the next couple months.
 
 ## Relationship between Main Scripts and Imported Local Modules (Process Flow)
 ### Script 1) Yahoo Finance Market Data Scraper
@@ -74,13 +75,14 @@ Overall, there's no right or wrong model; it's all about the assumptions. Rememb
 | - Cost of debt                   | Interest to debt ratio and interest coverage ratio      |
 | - Cost of equity                 | Industry and sector betas                               |
 |   - Equity risk premium          | U.S. market implied equity risk premium                 |
+| Mature firm cost of capital      | Risk-free rate + 4.5%                                   |
 
 #### Assumptions that require manual input:
 | Model Input                              | Default value |
 | ---------------------------------------- | ------------- |
 | Number of high-growth years              | 5             |
 | Number of DCF years before terminal year | 10            |
-| Marginal tax rate                        | 24%           |
+| Tax rate                                 | 24%           |
 | Current net operating loss carryover     | 0             |
 | Value of non-operating assets            | 0             |
 | Value of minority interests              | 0             |
@@ -96,4 +98,4 @@ Overall, there's no right or wrong model; it's all about the assumptions. Rememb
 
 *Note: some model assumptions and inputs will vary throughout the model*
 ### Acknowledgements
-This script is possible thanks to everything I have learnt from valuation legend Prof. Aswath Damodaran ([YouTube Channel](https://www.youtube.com/c/AswathDamodaranonValuation)) (*Note: this was NOT made with the Professor's consultation*). You can learn more about finance and valuation on his YouTube channel and website.
+This script is possible thanks to everything I have learnt from Prof. Aswath Damodaran ([YouTube Channel](https://www.youtube.com/c/AswathDamodaranonValuation)) (*Note: this was NOT made with the Professor's consultation*). You can learn more about finance and valuation on his YouTube channel and website.
