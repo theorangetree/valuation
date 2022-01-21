@@ -26,8 +26,8 @@ The data is exported to `market_data.csv` with cell "A1" containing the effectiv
 
 The data is exported to `DCF_valuations.xlxs`, which is a formatted Excel file with one DCF model per stock.
 
-##### Inputing Model Assumptions
-Assumptions can be individually adjusted in the script by passing arguments to the `.prepare_model_inputs()` method. This is done by adding to a dictionary in the `ASSUMPTIONS_LIST` variable. There are plans to make this a much more accessible process in the next couple months.
+#### Adding/Changing Model Assumptions
+Assumptions can be individually adjusted in the `valuation_tool.py` script by passing arguments to the `.prepare_model_inputs()` method. This is done by adding dictionaries to the `ASSUMPTIONS_LIST` variable, explained in the document. There are plans to make this a more accessible process in the next couple months.
 
 ## Relationship between Main Scripts and Imported Local Modules (Process Flow)
 ### Script 1) Yahoo Finance Market Data Scraper

@@ -99,14 +99,14 @@ def parse_json(html):
         json_info = json.loads(new_data)
         return json_info
 
-async def market_data(ticker_list):
+async def market_data(ticker_list, write_errors=False):
     """Scrape all data and output a dictionary: key = stock ticker, value = dictionary of relevant stock information"""
 
     if __name__ == '__main__':
         # Set Yahoo Finance urls
         quote_summary_url = 'https://finance.yahoo.com/quote/{}'
 
-        # Scrape data
+        # Scrape data for ticker in ticker_list
         async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit=0)) as session:
             html_list_qs = await scrape_tickers(session, quote_summary_url, ticker_list)
 
@@ -139,17 +139,18 @@ async def market_data(ticker_list):
         output_df.to_csv('market_data.csv')
         print(f'Wrote data to \'market_data.csv\' for {output_df.index.size} tickers')
 
-        # Export status codes of web request errors
-        pd.DataFrame().from_dict(status_codes, orient='index').to_csv('status_codes.csv')
+        if write_errors is True:
+            # Export status codes of web request errors
+            pd.DataFrame().from_dict(status_codes, orient='index').to_csv('status_codes.csv')
 
-        # Export list of exception errors
-        with open('errors.csv', 'w', encoding="utf-8") as file:
-            writer = csv.writer(file)
-            writer.writerows(errors)
+            # Export list of exception errors
+            with open('errors.csv', 'w', encoding="utf-8") as file:
+                writer = csv.writer(file)
+                writer.writerows(errors)
 
         return output_df
 
-asyncio.run(market_data(tickers))
+asyncio.run(market_data(tickers, write_errors=False))
 
 t1 = time.time()
 tp1 = time.process_time()

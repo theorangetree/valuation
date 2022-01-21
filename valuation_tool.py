@@ -4,27 +4,12 @@
 
 Usage Guideline:
     # Update TICKER_LIST to contain a python list of tickers for companies you want to value
-    # (Optional) Update ASSUMPTION_LIST by adding dictionaries to the list
+    # (Optional) Update ASSUMPTION_LIST by adding dictionaries (one for each stock) to the list
     # Run script -> review Excel output -> adjust assumptions -> re-run script
     # If market data is older than 3 months, consider running yf_market_data_scraper.py to update it (runtime ~2.5hrs)
 
 Main function:
 main() -- Export an Excel workbook containing a DCF valuation in each worksheet per ticker in TICKER_LIST
-
-Class and main methods:
-CompanyInfo()               -- Store valuation-related data
-    .prepare_model_inputs() -- Generate model inputs and assumptions automatically or set based on arguments passed
-    .valuation_model()      -- Create DCF valuation model using the model inputs above
-Outputs tuple containing: dcf (data frame), final valuation (data frame), ticker, name, value-to-price ratio, model inputs (dictionary)
-
-Other class methods:
-.tax_rate()          -- Set tax rate assumption
-.calculated_fields() -- Run calculated_fields.py to calculate unlevered beta and sales-to-capital ratios for market data
-.get_market_aggs()   -- Run industry_aggregator.py to aggregate market data by sector and industry
-.growth()            -- Set or auto-estimate growth rate and number of growth years
-.target_margin()     -- Set or auto-estimate target margin and years to achieve target margin
-.sales_to_capital()  -- Set or auto-estimate future sales-to-capital ratio
-.cost_of_capital()   -- Set or auto-estimate cost of capital (same for its components: cost of debt and cost of equity)
 
 Other functions:
 ttm_income_statement    -- Clean and return latest quarterly income statement items for valuation model inputs
@@ -54,6 +39,7 @@ TICKER_LIST = ['ASAN','CRM','GOOG','WRBY'] # List of companies to value
 
 # USER-INPUT ASSUMPTIONS (OPTIONAL)
 # Use a list of dictionaries, where first dictionary contains assumptions for first ticker and so on...
+# Dictionaries can be empty and only need keys for assumptions you wish to adjust
 ASSUMPTIONS_LIST = [{}]
 
 """ Here areall available keyword arguments for the assumptions
@@ -132,6 +118,21 @@ def income_statement_trends(is_yearly):
 class CompanyInfo:
     """Pull, estimate and store valuation information specific to one company
     Uses information to create DCF valuation model
+
+    Main methods:
+    CompanyInfo()               -- Store valuation-related data
+        .prepare_model_inputs() -- Generate model inputs and assumptions automatically or set based on arguments passed
+        .valuation_model()      -- Create DCF valuation model using the model inputs above
+    Outputs tuple containing: dcf (data frame), final valuation (data frame), ticker, name, value-to-price ratio, model inputs (dictionary)
+
+    Other methods:
+    .tax_rate()          -- Set tax rate assumption
+    .calculated_fields() -- Run calculated_fields.py to calculate unlevered beta and sales-to-capital ratios for market data
+    .get_market_aggs()   -- Run industry_aggregator.py to aggregate market data by sector and industry
+    .growth()            -- Set or auto-estimate growth rate and number of growth years
+    .target_margin()     -- Set or auto-estimate target margin and years to achieve target margin
+    .sales_to_capital()  -- Set or auto-estimate future sales-to-capital ratio
+    .cost_of_capital()   -- Set or auto-estimate cost of capital (same for its components: cost of debt and cost of equity)
     """
     def __init__(self, ticker: str, market_data_path='market_data.csv'):
         self.ticker             = ticker
